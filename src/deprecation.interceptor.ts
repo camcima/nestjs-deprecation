@@ -127,20 +127,17 @@ function validateModuleOptions(options: unknown): DeprecationModuleOptions {
   return options as DeprecationModuleOptions;
 }
 
-/** Route PATTERN across adapters: Fastify v4+ / Fastify v3 / Express / fallback. */
+/**
+ * Route PATTERN across adapters: Fastify v4+ / Fastify v3 / Express.
+ * Deliberately never falls back to request.url: a concrete URL carries path
+ * ids and query strings, breaking the documented low-cardinality guarantee.
+ */
 function resolveRoutePattern(request: {
   routeOptions?: { url?: string };
   routerPath?: string;
   route?: { path?: string };
-  url?: string;
 }): string {
-  return (
-    request.routeOptions?.url ??
-    request.routerPath ??
-    request.route?.path ??
-    request.url ??
-    'unknown'
-  );
+  return request.routeOptions?.url ?? request.routerPath ?? request.route?.path ?? 'unknown';
 }
 
 function isThenable(value: unknown): value is PromiseLike<unknown> {

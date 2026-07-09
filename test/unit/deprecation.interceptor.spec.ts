@@ -37,6 +37,7 @@ function createHarness(
   options: DeprecationModuleOptions = {},
   existingHeaders: Record<string, string> = {},
   contextType = 'http',
+  request: Record<string, unknown> = { method: 'GET', route: { path: '/orders' } },
 ): Harness {
   const headers: Record<string, string> = { ...existingHeaders };
   const response = {
@@ -45,7 +46,6 @@ function createHarness(
     },
     getHeader: (name: string) => headers[name],
   };
-  const request = { method: 'GET', route: { path: '/orders' } };
   const context = {
     getType: () => contextType,
     getHandler: () => handler,
@@ -214,5 +214,22 @@ describe('DeprecationInterceptor', () => {
     expect(() => new DeprecationInterceptor(new Reflector(), { enabled: 'yes' } as never)).toThrow(
       /"enabled" must be a boolean/,
     );
+  });
+
+  it('falls back to "unknown", never the concrete URL, on unrecognised adapters', async () => {
+    const events: DeprecatedCallEvent[] = [];
+    const { interceptor, context } = createHarness(
+      OrdersController.prototype.list,
+      {
+        onDeprecatedCall: (event) => {
+          events.push(event);
+        },
+      },
+      {},
+      'http',
+      { method: 'GET', url: '/orders/42?token=secret' },
+    );
+    await firstValueFrom(interceptor.intercept(context, next));
+    expect(events[0].route).toBe('unknown');
   });
 });
