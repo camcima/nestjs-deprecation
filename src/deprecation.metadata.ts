@@ -84,7 +84,10 @@ function parseDateOption(value: Date | string, option: string, where: string): D
       `[nestjs-deprecation] ${where}: "${option}" must not be before 1970-01-01 (structured-field dates are unix timestamps).`,
     );
   }
-  return date;
+  // The emitted formats (RFC 9745 unix seconds, RFC 8594 IMF-fixdate) are
+  // second-granular. Truncate once here so every derived value — headers,
+  // ISO strings, sunsetEpochMs, isPastSunset — agrees exactly.
+  return new Date(Math.trunc(date.getTime() / 1000) * 1000);
 }
 
 function assertHref(href: unknown, option: string, where: string): string {

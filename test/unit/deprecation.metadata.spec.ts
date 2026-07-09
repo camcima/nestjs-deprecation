@@ -121,4 +121,16 @@ describe('buildDeprecationMetadata', () => {
       /OrdersController\.list/,
     );
   });
+
+  it('truncates fractional seconds so headers, ISO values, and epoch agree', () => {
+    const metadata = buildDeprecationMetadata(
+      { deprecatedAt: '2026-07-01T00:00:00.900Z', sunsetAt: '2027-01-01T00:00:00.900Z' },
+      WHERE,
+    );
+    expect(metadata.deprecationHeader).toBe('@1782864000');
+    expect(metadata.deprecatedAtIso).toBe('2026-07-01T00:00:00.000Z');
+    expect(metadata.sunsetHeader).toBe('Fri, 01 Jan 2027 00:00:00 GMT');
+    expect(metadata.sunsetAtIso).toBe('2027-01-01T00:00:00.000Z');
+    expect(metadata.sunsetEpochMs).toBe(Date.parse('2027-01-01T00:00:00Z'));
+  });
 });
