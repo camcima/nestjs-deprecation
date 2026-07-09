@@ -197,4 +197,22 @@ describe('DeprecationInterceptor', () => {
     expect(headers.Link).toBe('</v2/orders>; rel="successor-version"');
     expect(events).toHaveLength(1);
   });
+
+  it.each([null, 'nope', 42])('rejects non-object module options at boot: %j', (options) => {
+    expect(() => new DeprecationInterceptor(new Reflector(), options as never)).toThrow(
+      /options must be an object/,
+    );
+  });
+
+  it('rejects a non-function onDeprecatedCall at boot', () => {
+    expect(
+      () => new DeprecationInterceptor(new Reflector(), { onDeprecatedCall: 'log' } as never),
+    ).toThrow(/"onDeprecatedCall" must be a function/);
+  });
+
+  it('rejects a non-boolean enabled at boot', () => {
+    expect(() => new DeprecationInterceptor(new Reflector(), { enabled: 'yes' } as never)).toThrow(
+      /"enabled" must be a boolean/,
+    );
+  });
 });

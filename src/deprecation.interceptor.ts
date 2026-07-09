@@ -15,13 +15,16 @@ import { DeprecationMetadata, DeprecationModuleOptions } from './deprecation.int
 @Injectable()
 export class DeprecationInterceptor implements NestInterceptor {
   private readonly logger = new Logger(DeprecationInterceptor.name);
+  private readonly options: DeprecationModuleOptions;
 
   constructor(
     private readonly reflector: Reflector,
     @Optional()
     @Inject(DEPRECATION_MODULE_OPTIONS)
-    private readonly options: DeprecationModuleOptions = {},
-  ) {}
+    options?: DeprecationModuleOptions,
+  ) {
+    this.options = validateModuleOptions(options);
+  }
 
   intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
     try {
@@ -52,6 +55,7 @@ export class DeprecationInterceptor implements NestInterceptor {
   }
 
   private writeHeaders(
+    // Both Express (Response) and Fastify (Reply) expose header() and getHeader().
     response: {
       header: (name: string, value: string) => unknown;
       getHeader?: (name: string) => unknown;
@@ -97,6 +101,30 @@ export class DeprecationInterceptor implements NestInterceptor {
       this.logger.warn(`onDeprecatedCall listener threw: ${String(error)}`);
     }
   }
+}
+
+/**
+ * Fail closed at boot: a misconfigured module (e.g. a forRootAsync factory
+ * returning null) must be a DI instantiation error, not a silent per-request
+ * disablement of deprecation signalling.
+ */
+function validateModuleOptions(options: unknown): DeprecationModuleOptions {
+  if (options === undefined) return {};
+  if (options === null || typeof options !== 'object') {
+    throw new Error(
+      `[nestjs-deprecation] DeprecationModule options must be an object, got: ${options === null ? 'null' : typeof options}. Check your forRoot()/forRootAsync() configuration.`,
+    );
+  }
+  const { enabled, onDeprecatedCall } = options as DeprecationModuleOptions;
+  if (enabled !== undefined && typeof enabled !== 'boolean') {
+    throw new Error(`[nestjs-deprecation] DeprecationModule "enabled" must be a boolean.`);
+  }
+  if (onDeprecatedCall !== undefined && typeof onDeprecatedCall !== 'function') {
+    throw new Error(
+      `[nestjs-deprecation] DeprecationModule "onDeprecatedCall" must be a function.`,
+    );
+  }
+  return options as DeprecationModuleOptions;
 }
 
 /** Route PATTERN across adapters: Fastify v4+ / Fastify v3 / Express / fallback. */
