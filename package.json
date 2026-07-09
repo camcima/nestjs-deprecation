@@ -1,0 +1,105 @@
+{
+  "name": "@camcima/nestjs-deprecation",
+  "version": "0.1.0",
+  "description": "NestJS library for RFC 9745 (Deprecation) and RFC 8594 (Sunset) HTTP response headers, with Swagger and OpenTelemetry integration",
+  "license": "MIT",
+  "author": "Carlos Cima",
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/camcima/nestjs-deprecation.git"
+  },
+  "keywords": [
+    "nestjs",
+    "deprecation",
+    "sunset",
+    "rfc9745",
+    "rfc8594",
+    "http-headers",
+    "api-governance",
+    "api-lifecycle"
+  ],
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./swagger": {
+      "types": "./dist/swagger/index.d.ts",
+      "default": "./dist/swagger/index.js"
+    },
+    "./otel": {
+      "types": "./dist/otel/index.d.ts",
+      "default": "./dist/otel/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "rm -rf dist tsconfig.build.tsbuildinfo && tsc -p tsconfig.build.json",
+    "lint": "eslint \"{src,test}/**/*.ts\"",
+    "format": "prettier --check 'src/**/*.ts' 'test/**/*.ts'",
+    "format:fix": "prettier --write 'src/**/*.ts' 'test/**/*.ts'",
+    "test": "vitest run",
+    "test:unit": "vitest run test/unit",
+    "test:e2e": "vitest run test/e2e",
+    "test:cov": "vitest run --coverage",
+    "release": "release-it",
+    "audit:deps": "pnpm audit --prod",
+    "audit:secrets": "gitleaks git --no-banner --redact -v",
+    "prepublishOnly": "pnpm build"
+  },
+  "peerDependencies": {
+    "@nestjs/common": "^10.0.0 || ^11.0.0",
+    "@nestjs/core": "^10.0.0 || ^11.0.0",
+    "@nestjs/swagger": "^7.0.0 || ^8.0.0 || ^11.0.0",
+    "@opentelemetry/api": ">=1.8.0",
+    "reflect-metadata": "^0.1.13 || ^0.2.0"
+  },
+  "peerDependenciesMeta": {
+    "@nestjs/swagger": {
+      "optional": true
+    },
+    "@opentelemetry/api": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@commitlint/cli": "^21.0.2",
+    "@commitlint/config-conventional": "^21.0.2",
+    "@nestjs/common": "^11.1.27",
+    "@nestjs/core": "^11.1.27",
+    "@nestjs/platform-express": "^11.1.27",
+    "@nestjs/platform-fastify": "^11.1.27",
+    "@nestjs/swagger": "^11.4.4",
+    "@nestjs/testing": "^11.1.27",
+    "@opentelemetry/api": "^1.9.0",
+    "@opentelemetry/sdk-metrics": "^2.0.0",
+    "@swc/core": "^1.15.43",
+    "@types/node": "^26.0.0",
+    "@types/supertest": "^7.2.0",
+    "@vitest/coverage-v8": "^4.1.9",
+    "eslint": "^10.5.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-prettier": "^5.5.6",
+    "globals": "^17.7.0",
+    "lefthook": "^2.1.9",
+    "prettier": "^3.8.4",
+    "reflect-metadata": "^0.2.2",
+    "release-it": "^20.2.0",
+    "rxjs": "^7.8.2",
+    "supertest": "^7.2.2",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.62.0",
+    "unplugin-swc": "^1.5.9",
+    "vitest": "^4.1.9"
+  }
+}
