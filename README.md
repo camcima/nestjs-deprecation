@@ -71,7 +71,7 @@ pnpm add @camcima/nestjs-deprecation
 
 ## Quick Start
 
-Register `DeprecationModule.forRoot()` once in your root `AppModule`. It registers a global `APP_INTERCEPTOR` that writes deprecation headers on any handler or controller decorated with `@Deprecated()`.
+Register `DeprecationModule.forRoot()` once in your root `AppModule`. It registers a global `APP_INTERCEPTOR` that writes deprecation headers on any handler or controller decorated with `@Deprecated()`. Accidentally importing it twice is tolerated — the first interceptor instance wins and later ones skip, so headers and telemetry are never duplicated — but register it once, in the root module.
 
 ```typescript
 // app.module.ts

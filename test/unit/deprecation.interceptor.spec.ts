@@ -179,4 +179,22 @@ describe('DeprecationInterceptor', () => {
       process.off('unhandledRejection', capture);
     }
   });
+
+  it('skips when another interceptor instance already wrote the Deprecation header', async () => {
+    const events: DeprecatedCallEvent[] = [];
+    const options: DeprecationModuleOptions = {
+      onDeprecatedCall: (event) => {
+        events.push(event);
+      },
+    };
+    const { interceptor, context, headers } = createHarness(
+      OrdersController.prototype.list,
+      options,
+    );
+    const second = new DeprecationInterceptor(new Reflector(), options);
+    await firstValueFrom(interceptor.intercept(context, next));
+    await firstValueFrom(second.intercept(context, next));
+    expect(headers.Link).toBe('</v2/orders>; rel="successor-version"');
+    expect(events).toHaveLength(1);
+  });
 });

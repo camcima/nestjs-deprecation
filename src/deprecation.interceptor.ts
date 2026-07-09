@@ -34,10 +34,16 @@ export class DeprecationInterceptor implements NestInterceptor {
         [context.getHandler(), context.getClass()],
       );
       if (metadata) {
-        // Write BEFORE next.handle() so headers survive thrown exceptions and
-        // are flushed with the first byte of streaming responses.
-        this.writeHeaders(context, metadata);
-        this.notify(context, metadata);
+        const response = context.switchToHttp().getResponse();
+        // Tolerate duplicate module registration (forRoot() imported twice
+        // creates two interceptor instances): the first writer wins; later
+        // instances skip so Link relations and telemetry are not duplicated.
+        if (response.getHeader?.('Deprecation') === undefined) {
+          // Write BEFORE next.handle() so headers survive thrown exceptions and
+          // are flushed with the first byte of streaming responses.
+          this.writeHeaders(response, metadata);
+          this.notify(context, metadata);
+        }
       }
     } catch (error) {
       this.logger.warn(`Deprecation interceptor skipped: ${String(error)}`);
@@ -45,10 +51,14 @@ export class DeprecationInterceptor implements NestInterceptor {
     return next.handle();
   }
 
-  private writeHeaders(context: ExecutionContext, metadata: DeprecationMetadata): void {
+  private writeHeaders(
+    response: {
+      header: (name: string, value: string) => unknown;
+      getHeader?: (name: string) => unknown;
+    },
+    metadata: DeprecationMetadata,
+  ): void {
     try {
-      // Both Express (Response) and Fastify (Reply) expose header() and getHeader().
-      const response = context.switchToHttp().getResponse();
       response.header('Deprecation', metadata.deprecationHeader);
       if (metadata.sunsetHeader !== undefined) {
         response.header('Sunset', metadata.sunsetHeader);
