@@ -156,4 +156,23 @@ describe('DeprecationInterceptor', () => {
     };
     await expect(firstValueFrom(interceptor.intercept(context, next))).resolves.toBe('ok');
   });
+
+  it('contains rejected async listeners without an unhandled rejection', async () => {
+    const unhandled: unknown[] = [];
+    const capture = (reason: unknown) => unhandled.push(reason);
+    process.on('unhandledRejection', capture);
+    try {
+      const { interceptor, context, headers } = createHarness(OrdersController.prototype.list, {
+        onDeprecatedCall: async () => {
+          throw new Error('async listener boom');
+        },
+      });
+      await expect(firstValueFrom(interceptor.intercept(context, next))).resolves.toBe('ok');
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(unhandled).toEqual([]);
+      expect(headers.Deprecation).toBe('@1782864000');
+    } finally {
+      process.off('unhandledRejection', capture);
+    }
+  });
 });

@@ -70,7 +70,7 @@ export class DeprecationInterceptor implements NestInterceptor {
     if (!listener) return;
     try {
       const request = context.switchToHttp().getRequest();
-      listener({
+      const result: unknown = listener({
         method: String(request.method ?? 'UNKNOWN'),
         route: resolveRoutePattern(request),
         controllerName: context.getClass().name,
@@ -78,6 +78,11 @@ export class DeprecationInterceptor implements NestInterceptor {
         metadata,
         isPastSunset: metadata.sunsetEpochMs !== undefined && Date.now() > metadata.sunsetEpochMs,
       });
+      if (isThenable(result)) {
+        result.then(undefined, (error) => {
+          this.logger.warn(`onDeprecatedCall listener rejected: ${String(error)}`);
+        });
+      }
     } catch (error) {
       this.logger.warn(`onDeprecatedCall listener threw: ${String(error)}`);
     }
@@ -98,4 +103,8 @@ function resolveRoutePattern(request: {
     request.url ??
     'unknown'
   );
+}
+
+function isThenable(value: unknown): value is PromiseLike<unknown> {
+  return typeof (value as { then?: unknown } | null | undefined)?.then === 'function';
 }

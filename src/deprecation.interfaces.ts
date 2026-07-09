@@ -38,7 +38,12 @@ export interface DeprecatedCallEvent {
   isPastSunset: boolean;
 }
 
-export type DeprecatedCallListener = (event: DeprecatedCallEvent) => void;
+/**
+ * May return a promise; a rejection is caught and logged, never propagated.
+ * Invoked inline before the route handler — defer slow work to the returned
+ * promise (or your own queue) to keep it off the request path.
+ */
+export type DeprecatedCallListener = (event: DeprecatedCallEvent) => void | Promise<void>;
 
 export interface DeprecationModuleOptions {
   /** Kill switch. Default: true. */

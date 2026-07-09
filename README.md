@@ -147,7 +147,7 @@ DeprecationModule.forRootAsync({
 | Option             | Type              | Default | Description                                                                                                                                                          |
 | ------------------ | ----------------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `enabled`          | `boolean`         | `true`  | Kill switch. When `false`, the interceptor is a pure pass-through.                                                                                                   |
-| `onDeprecatedCall` | `(event) => void` | —       | Invoked on every request to a deprecated endpoint. See [Telemetry](#telemetry). Errors thrown by the listener are caught and logged; they never affect the response. |
+| `onDeprecatedCall` | `(event) => void \| Promise<void>` | —       | Invoked on every request to a deprecated endpoint, inline before the handler runs. See [Telemetry](#telemetry). Errors — thrown synchronously or via a rejected promise — are caught and logged; they never affect the response. Defer slow work off the request path. |
 
 ## Swagger integration
 
