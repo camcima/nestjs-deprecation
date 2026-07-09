@@ -155,9 +155,9 @@ The `./swagger` subpath is optional and requires `@nestjs/swagger` (already a co
 
 1. Sets `deprecated: true` on the OpenAPI operation.
 2. Appends a generated Markdown block to the operation description (deprecation date, sunset date, `note`, links) — merged with, not clobbering, any `@ApiOperation()` you already applied.
-3. Documents the `Deprecation` / `Sunset` / `Link` response headers with example values.
+3. Documents the `Deprecation` / `Sunset` / `Link` response headers with example values on every response of the operation.
 
-Add `DiscoveryModule` (from `@nestjs/core`) to your application module, and call `applyDeprecationDocs(app)` inside the lazy document factory passed to `SwaggerModule.setup()` — this ordering matters, since the decoration must run before the OpenAPI document is built:
+Add `DiscoveryModule` (from `@nestjs/core`) to your application module, create the OpenAPI document, and pass it through `applyDeprecationDocs(document, app)`. The transform mutates and returns the given document instance only — it never touches decorator metadata, so you can build multiple differently-filtered documents in any order and each one is independent.
 
 ```typescript
 // app.module.ts
@@ -177,22 +177,24 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { applyDeprecationDocs } from '@camcima/nestjs-deprecation/swagger';
 
 const config = new DocumentBuilder().setTitle('My API').build();
+const document = SwaggerModule.createDocument(app, config);
 
-SwaggerModule.setup('/api', app, () => {
-  applyDeprecationDocs(app);
-  return SwaggerModule.createDocument(app, config);
-});
+SwaggerModule.setup('/api', app, applyDeprecationDocs(document, app));
 ```
 
-`applyDeprecationDocs(app, options?)` accepts an optional `filter` callback to skip specific controllers:
+`applyDeprecationDocs(document, app, options?)` accepts an optional `filter` callback to skip specific controllers per document:
 
 ```typescript
-applyDeprecationDocs(app, {
-  filter: (controller) => controller.name !== 'HealthController',
-});
+const publicDocument = applyDeprecationDocs(
+  SwaggerModule.createDocument(app, config),
+  app,
+  { filter: (controller) => controller.name !== 'InternalController' },
+);
 ```
 
 If `DiscoveryModule` is not imported, `applyDeprecationDocs` throws a clear setup error naming the fix, rather than failing silently.
+
+Routes are matched by recomputing each handler's route path; an application-wide `setGlobalPrefix()` is resolved automatically. Handlers whose document path cannot be resolved (e.g. custom URI versioning) are skipped with a logged warning rather than mis-annotated.
 
 `applyDeprecationDocs` is independent of the `enabled` kill switch: it decorates the OpenAPI document at build time regardless of the runtime `enabled` setting, so if you disable the interceptor at runtime, stop calling `applyDeprecationDocs` too, to keep docs and runtime behavior in sync.
 

@@ -3,7 +3,7 @@ import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { DeprecationModule } from '../../src';
-import { applyDeprecationDocs } from '../../src/swagger';
+import { applyDeprecationDocs, ApplyDeprecationDocsOptions } from '../../src/swagger';
 import { createAppModule } from './app.fixture';
 
 describe('applyDeprecationDocs', () => {
@@ -21,14 +21,18 @@ describe('applyDeprecationDocs', () => {
     await app.close();
   });
 
-  function buildDocument() {
-    applyDeprecationDocs(app);
-    return SwaggerModule.createDocument(app, new DocumentBuilder().setTitle('fixture').build());
+  function buildDocument(options?: ApplyDeprecationDocsOptions) {
+    const document = SwaggerModule.createDocument(
+      app,
+      new DocumentBuilder().setTitle('fixture').build(),
+    );
+    return applyDeprecationDocs(document, app, options);
   }
 
   it('marks deprecated operations and leaves fresh ones untouched', () => {
     const document = buildDocument();
     expect(document.paths['/orders'].get?.deprecated).toBe(true);
+    expect(document.paths['/orders/{id}'].get?.deprecated).toBe(true);
     expect(document.paths['/orders/fresh'].get?.deprecated).toBeUndefined();
   });
 
@@ -45,13 +49,18 @@ describe('applyDeprecationDocs', () => {
     expect(description).toContain('Use POST /v2/orders');
   });
 
-  it('documents the response headers with example values', () => {
+  it('documents the response headers on every response of the operation', () => {
     const document = buildDocument();
-    const responses = document.paths['/orders'].get?.responses as Record<string, any>;
-    const headers = responses['default'].headers;
-    expect(headers.Deprecation.schema.example).toBe('@1782864000');
-    expect(headers.Sunset.schema.example).toBe('Fri, 01 Jan 2027 00:00:00 GMT');
-    expect(headers.Link.schema.example).toContain('rel="deprecation"');
+    const responses = document.paths['/orders'].get?.responses as Record<
+      string,
+      { headers?: Record<string, { schema: { example: string } }> }
+    >;
+    expect(Object.keys(responses).length).toBeGreaterThan(0);
+    for (const response of Object.values(responses)) {
+      expect(response.headers?.Deprecation.schema.example).toBe('@1782864000');
+      expect(response.headers?.Sunset.schema.example).toBe('Fri, 01 Jan 2027 00:00:00 GMT');
+      expect(response.headers?.Link.schema.example).toContain('rel="deprecation"');
+    }
   });
 
   it('merges with a user-authored @ApiOperation instead of clobbering it', () => {
@@ -62,24 +71,39 @@ describe('applyDeprecationDocs', () => {
     expect(operation?.description).toContain('**Deprecated** since 2026-07-01');
   });
 
-  it('is idempotent: repeated calls do not duplicate the deprecation block', () => {
-    buildDocument();
+  it('is idempotent when applied twice to the same document', () => {
     const document = buildDocument();
+    applyDeprecationDocs(document, app);
     const description = document.paths['/orders/documented'].get?.description ?? '';
-    const count = (description.match(/\*\*Deprecated\*\* since/g) || []).length;
-    expect(count).toBe(1);
+    expect(description.match(/\*\*Deprecated\*\* since/g)).toHaveLength(1);
   });
 
-  it('respects the filter option', () => {
-    const seen: Array<string | undefined> = [];
-    applyDeprecationDocs(app, {
-      filter: (c) => {
-        seen.push(c.name);
-        return false;
-      },
-    });
-    expect(seen).toContain('OrdersController');
-    expect(seen).toContain('LegacyController');
+  it('applies the filter per document: excluded controllers stay untouched', () => {
+    const internalDoc = buildDocument();
+    const publicDoc = buildDocument({ filter: (c) => c.name !== 'OrdersController' });
+    expect(internalDoc.paths['/orders'].get?.deprecated).toBe(true);
+    expect(publicDoc.paths['/orders'].get?.deprecated).toBeUndefined();
+    expect(publicDoc.paths['/orders'].get?.description ?? '').not.toContain('**Deprecated**');
+    expect(publicDoc.paths['/legacy'].get?.deprecated).toBe(true);
+  });
+
+  it('resolves paths behind a global prefix via unique suffix match', async () => {
+    const moduleRef = await Test.createTestingModule({
+      imports: [createAppModule()],
+    }).compile();
+    const prefixed = moduleRef.createNestApplication();
+    prefixed.setGlobalPrefix('api');
+    await prefixed.init();
+    try {
+      const document = SwaggerModule.createDocument(
+        prefixed,
+        new DocumentBuilder().setTitle('prefixed').build(),
+      );
+      applyDeprecationDocs(document, prefixed);
+      expect(document.paths['/api/orders'].get?.deprecated).toBe(true);
+    } finally {
+      await prefixed.close();
+    }
   });
 
   it('throws a clear error when DiscoveryModule is missing', async () => {
@@ -88,7 +112,12 @@ describe('applyDeprecationDocs', () => {
     }).compile();
     const bareApp = moduleRef.createNestApplication();
     await bareApp.init();
-    expect(() => applyDeprecationDocs(bareApp)).toThrow(/requires DiscoveryModule/);
-    await bareApp.close();
+    try {
+      expect(() => applyDeprecationDocs({ paths: {} }, bareApp)).toThrow(
+        /requires DiscoveryModule/,
+      );
+    } finally {
+      await bareApp.close();
+    }
   });
 });
