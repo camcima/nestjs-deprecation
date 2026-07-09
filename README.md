@@ -283,7 +283,8 @@ Enforcement behaviors like returning `410 Gone` past sunset, or scheduled browno
 
 | Export                        | Kind      | Description                                                                                    |
 | ----------------------------- | --------- | ---------------------------------------------------------------------------------------------- |
-| `applyDeprecationDocs`        | Function  | Auto-applies `deprecated: true` + header docs to discovered controllers via `DiscoveryService` |
+| `applyDeprecationDocs`        | Function  | Transforms the given OpenAPI document: marks `@Deprecated()` operations deprecated and documents their response headers. Signature: `applyDeprecationDocs(document, app, options?)` → returns the document. |
+| `DeprecationDocumentLike`     | Interface | Minimal structural view of the OpenAPI document accepted by `applyDeprecationDocs`             |
 | `ApplyDeprecationDocsOptions` | Interface | Options for `applyDeprecationDocs` (`filter`)                                                  |
 | `DiscoveredController`        | Interface | Structural controller view passed to the `filter` option                                       |
 
