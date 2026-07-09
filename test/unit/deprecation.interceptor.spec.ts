@@ -115,7 +115,9 @@ describe('DeprecationInterceptor', () => {
   it('invokes onDeprecatedCall with the event', async () => {
     const events: DeprecatedCallEvent[] = [];
     const { interceptor, context } = createHarness(OrdersController.prototype.list, {
-      onDeprecatedCall: (event) => events.push(event),
+      onDeprecatedCall: (event) => {
+        events.push(event);
+      },
     });
     await firstValueFrom(interceptor.intercept(context, next));
     expect(events).toHaveLength(1);
@@ -132,7 +134,9 @@ describe('DeprecationInterceptor', () => {
   it('reports isPastSunset=true when the sunset date has passed', async () => {
     const events: DeprecatedCallEvent[] = [];
     const { interceptor, context } = createHarness(OrdersController.prototype.legacy, {
-      onDeprecatedCall: (event) => events.push(event),
+      onDeprecatedCall: (event) => {
+        events.push(event);
+      },
     });
     await firstValueFrom(interceptor.intercept(context, next));
     expect(events[0].isPastSunset).toBe(true);
