@@ -194,7 +194,7 @@ const publicDocument = applyDeprecationDocs(
 
 If `DiscoveryModule` is not imported, `applyDeprecationDocs` throws a clear setup error naming the fix, rather than failing silently.
 
-Routes are matched by recomputing each handler's route path; an application-wide `setGlobalPrefix()` is resolved automatically. Handlers whose document path cannot be resolved (e.g. custom URI versioning) are skipped with a logged warning rather than mis-annotated.
+Routes are matched by recomputing each handler's route path; an application-wide `setGlobalPrefix()` is resolved automatically. Handlers whose document path cannot be resolved (e.g. custom URI versioning) are skipped with a logged warning rather than mis-annotated. One caveat: for documents built with the `include` option, a deprecated route excluded from the document can suffix-match a similarly named route from another module — prefer filtering with the `filter` callback (which skips the controller entirely) over relying on `include` alone.
 
 `applyDeprecationDocs` is independent of the `enabled` kill switch: it decorates the OpenAPI document at build time regardless of the runtime `enabled` setting, so if you disable the interceptor at runtime, stop calling `applyDeprecationDocs` too, to keep docs and runtime behavior in sync.
 
@@ -272,7 +272,7 @@ Enforcement behaviors like returning `410 Gone` past sunset, or scheduled browno
 | `DeprecatedOptions`             | Interface        | Options accepted by `@Deprecated()`                                                               |
 | `DeprecationMetadata`           | Interface        | Precomputed, frozen wire values stored as Reflect metadata                                        |
 | `DeprecatedCallEvent`           | Interface        | Shape of the event passed to `onDeprecatedCall`                                                   |
-| `DeprecatedCallListener`        | Type             | `(event: DeprecatedCallEvent) => void`                                                            |
+| `DeprecatedCallListener`        | Type             | `` `(event: DeprecatedCallEvent) => void \| Promise<void>` ``                                    |
 | `DeprecationModuleOptions`      | Interface        | Options accepted by `forRoot()`                                                                   |
 | `DeprecationModuleAsyncOptions` | Interface        | Options accepted by `forRootAsync()`                                                              |
 | `LinkRelation`                  | Interface        | `{ rel: string; href: string; type?: string }` — one entry in `links`                             |
