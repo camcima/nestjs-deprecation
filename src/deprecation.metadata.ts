@@ -27,6 +27,13 @@ export function buildDeprecationMetadata(
     );
   }
 
+  if (options.note !== undefined && typeof options.note !== 'string') {
+    throw new Error(`[nestjs-deprecation] ${where}: "note" must be a string.`);
+  }
+  if (options.links !== undefined && !Array.isArray(options.links)) {
+    throw new Error(`[nestjs-deprecation] ${where}: "links" must be an array.`);
+  }
+
   const links: LinkRelation[] = [];
   if (options.link !== undefined) {
     links.push({ rel: 'deprecation', href: assertHref(options.link, 'link', where) });
@@ -43,9 +50,9 @@ export function buildDeprecationMetadata(
         `[nestjs-deprecation] ${where}: "links[${index}].rel" must be a non-empty string.`,
       );
     }
-    assertHeaderSafe(custom.rel, `links[${index}].rel`, where, { rejectQuote: true });
+    assertQuotedParamSafe(custom.rel, `links[${index}].rel`, where);
     if (custom.type !== undefined) {
-      assertHeaderSafe(custom.type, `links[${index}].type`, where, { rejectQuote: true });
+      assertQuotedParamSafe(custom.type, `links[${index}].type`, where);
     }
     links.push({
       rel: custom.rel,
@@ -80,38 +87,44 @@ function parseDateOption(value: Date | string, option: string, where: string): D
   return date;
 }
 
-function assertHref(href: string, option: string, where: string): string {
-  if (typeof href === 'string' && href.startsWith('/')) {
-    assertHeaderSafe(href, option, where);
-    return href;
-  }
-  try {
-    new URL(href);
-  } catch {
+function assertHref(href: unknown, option: string, where: string): string {
+  if (typeof href !== 'string') {
     throw new Error(
-      `[nestjs-deprecation] ${where}: "${option}" must be a valid URL or absolute path, got: ${String(href)}`,
+      `[nestjs-deprecation] ${where}: "${option}" must be a string, got: ${typeof href}`,
     );
   }
-  assertHeaderSafe(href, option, where);
+  if (!href.startsWith('/')) {
+    try {
+      new URL(href);
+    } catch {
+      throw new Error(
+        `[nestjs-deprecation] ${where}: "${option}" must be a valid URL or absolute path, got: ${String(href)}`,
+      );
+    }
+  }
+  // RFC 8288 wraps the target in <...>, where whitespace, control characters
+  // and < > " \ cannot appear raw in a URI-reference. Require pre-encoded input.
+  if (/[\x00-\x20<>"\\]/.test(href)) {
+    throw new Error(
+      `[nestjs-deprecation] ${where}: "${option}" must not contain whitespace, control characters, or any of < > " \\ — percent-encode reserved characters instead`,
+    );
+  }
   return href;
 }
 
 /**
- * Rejects header-unsafe characters so misconfiguration fails at decoration time
- * (app boot) rather than when Node's `setHeader` throws at request time.
+ * rel/type are emitted inside HTTP quoted-strings, where control characters,
+ * double quotes and backslashes cannot appear raw (RFC 9110 §5.6.4).
  */
-function assertHeaderSafe(
-  value: string,
-  option: string,
-  where: string,
-  { rejectQuote = false }: { rejectQuote?: boolean } = {},
-): void {
-  if (/[\x00-\x1F]/.test(value)) {
+function assertQuotedParamSafe(value: unknown, option: string, where: string): void {
+  if (typeof value !== 'string') {
     throw new Error(
-      `[nestjs-deprecation] ${where}: "${option}" must not contain control characters`,
+      `[nestjs-deprecation] ${where}: "${option}" must be a string, got: ${typeof value}`,
     );
   }
-  if (rejectQuote && value.includes('"')) {
-    throw new Error(`[nestjs-deprecation] ${where}: "${option}" must not contain double quotes`);
+  if (/[\x00-\x1F"\\]/.test(value)) {
+    throw new Error(
+      `[nestjs-deprecation] ${where}: "${option}" must not contain control characters, double quotes, or backslashes`,
+    );
   }
 }

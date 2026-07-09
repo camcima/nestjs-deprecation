@@ -89,6 +89,29 @@ describe('buildDeprecationMetadata', () => {
       },
       /double quotes/,
     ],
+    [
+      { deprecatedAt: '2026-07-01T00:00:00Z', link: '/v2>; rel="alternate"' },
+      /"link" must not contain whitespace, control characters/,
+    ],
+    [
+      { deprecatedAt: '2026-07-01T00:00:00Z', successor: '/v2 orders' },
+      /"successor" must not contain whitespace/,
+    ],
+    [
+      { deprecatedAt: '2026-07-01T00:00:00Z', link: 'https://x.example/<v2>' },
+      /"link" must not contain whitespace/,
+    ],
+    [
+      { deprecatedAt: '2026-07-01T00:00:00Z', links: [{ rel: 'alt\\ernate', href: '/v2' }] },
+      /"links\[0\]\.rel" must not contain control characters, double quotes, or backslashes/,
+    ],
+    [{ deprecatedAt: '2026-07-01T00:00:00Z', note: 42 }, /"note" must be a string/],
+    [{ deprecatedAt: '2026-07-01T00:00:00Z', links: 'nope' }, /"links" must be an array/],
+    [
+      { deprecatedAt: '2026-07-01T00:00:00Z', links: [{ rel: 'alternate', href: '/v2', type: 7 }] },
+      /"links\[0\]\.type" must be a string/,
+    ],
+    [{ deprecatedAt: '2026-07-01T00:00:00Z', link: 42 }, /"link" must be a string/],
   ])('rejects invalid options: %j', (options, message) => {
     expect(() => buildDeprecationMetadata(options as never, WHERE)).toThrow(message);
   });
