@@ -1,4 +1,10 @@
-# @camcima/nestjs-deprecation
+<div align="center">
+
+<picture>
+  <img alt="nestjs-deprecation" src="assets/logo.svg" width="600">
+</picture>
+
+<br>
 
 [![CI](https://github.com/camcima/nestjs-deprecation/actions/workflows/ci.yml/badge.svg)](https://github.com/camcima/nestjs-deprecation/actions/workflows/ci.yml)
 [![CodeQL](https://github.com/camcima/nestjs-deprecation/actions/workflows/codeql.yml/badge.svg)](https://github.com/camcima/nestjs-deprecation/actions/workflows/codeql.yml)
@@ -6,6 +12,8 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![TypeScript](https://img.shields.io/badge/TypeScript-6-blue.svg)](https://www.typescriptlang.org/)
 [![Node.js](https://img.shields.io/badge/Node.js-20%20%7C%2022%20%7C%2024-green.svg)](https://nodejs.org/)
+
+</div>
 
 NestJS library for RFC 9745 (`Deprecation`) and RFC 8594 (`Sunset`) HTTP response headers — decorator-driven API deprecation with Swagger and OpenTelemetry integration.
 
@@ -19,7 +27,6 @@ NestJS library for RFC 9745 (`Deprecation`) and RFC 8594 (`Sunset`) HTTP respons
 - [Strictly informational](#strictly-informational)
 - [Known limitations](#known-limitations)
 - [API Reference](#api-reference)
-- [Prior art](#prior-art)
 - [License](#license)
 
 ## What are RFC 9745 / RFC 8594?
@@ -245,7 +252,7 @@ This registers a counter named `http.server.deprecated_requests` with attributes
 
 `@camcima/nestjs-deprecation` never changes endpoint behavior — not before the deprecation date, not after the sunset date. This is the purest reading of RFC 9745: "the act of deprecation does not change any behavior of the resource." There is no 410-enforcement mode, no brownout/probabilistic-failure mode, and no request blocking of any kind; the library only ever adds response headers and (optionally) fires a telemetry callback.
 
-Enforcement behaviors like returning `410 Gone` past sunset, or scheduled brownouts, were deliberately considered and deferred — see the design spec's [Considered and deferred](docs/superpowers/specs/2026-07-08-nestjs-deprecation-design.md#considered-and-deferred) section for the reasoning. If you need enforcement, build it on top of the `onDeprecatedCall`/`isPastSunset` hook rather than expecting this library to do it for you.
+Enforcement behaviors like returning `410 Gone` past sunset, or scheduled brownouts, were deliberately considered and left out of scope. If you need enforcement, build it on top of the `onDeprecatedCall`/`isPastSunset` hook rather than expecting this library to do it for you.
 
 ## Known limitations
 
@@ -284,10 +291,6 @@ Enforcement behaviors like returning `410 Gone` past sunset, or scheduled browno
 | `createOtelDeprecationListener`  | Function  | Returns an `onDeprecatedCall` listener that increments an OTel counter |
 | `OtelDeprecationListenerOptions` | Interface | Options for `createOtelDeprecationListener` (`meterProvider`)          |
 | `DEPRECATED_REQUESTS_METRIC`     | Constant  | `'http.server.deprecated_requests'`                                    |
-
-## Prior art
-
-[`fastapi-deprecation`](https://github.com/fractalvision/fastapi-deprecation) implements RFC 9745/8594 for FastAPI and is broader in scope: post-sunset `410` blocking, scheduled/probabilistic brownouts, WebSocket/SSE support, CDN cache-purge headers. `@camcima/nestjs-deprecation` takes a narrower, strictly-informational stance for NestJS and differentiates on OpenTelemetry-native telemetry (a ready-made listener, rather than a bare callback with DIY Prometheus/Redis wiring) and strict RFC fidelity, including the registered `rel="deprecation"` link relation.
 
 ## License
 

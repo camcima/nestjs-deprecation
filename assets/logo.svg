@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 712 100" role="img" aria-label="nestjs-deprecation logo">
+  <defs>
+    <style>
+      @media (prefers-color-scheme: dark) {
+        .logo-text { fill: #e6edf3; }
+        .sun { fill: #f0883e; }
+        .stroke { stroke: #f0883e; fill: none; }
+      }
+      @media (prefers-color-scheme: light) {
+        .logo-text { fill: #24292f; }
+        .sun { fill: #bc4c00; }
+        .stroke { stroke: #bc4c00; fill: none; }
+      }
+    </style>
+  </defs>
+
+  <!-- Setting sun over the horizon: the RFC 8594 "Sunset" motif -->
+  <!-- Rays -->
+  <g class="stroke" stroke-width="3" stroke-linecap="round">
+    <line x1="72.9" y1="51.9" x2="82.1" y2="44.1"/>
+    <line x1="65.3" y1="46.1" x2="70.4" y2="35.2"/>
+    <line x1="56" y1="44" x2="56" y2="32"/>
+    <line x1="46.7" y1="46.1" x2="41.6" y2="35.2"/>
+    <line x1="39.2" y1="51.9" x2="30" y2="44.1"/>
+  </g>
+  <!-- Sun disc (upper half, resting on the horizon) -->
+  <path class="sun" d="M37,66 A19,19 0 0 1 75,66 Z"/>
+  <!-- Horizon -->
+  <line class="stroke" x1="8" y1="66" x2="104" y2="66" stroke-width="3" stroke-linecap="round"/>
+
+  <!-- Wordmark -->
+  <text class="logo-text" x="120" y="66" font-family="Georgia, 'Times New Roman', serif" font-size="60" font-weight="bold" textLength="580" lengthAdjust="spacingAndGlyphs">nestjs-deprecation</text>
+</svg>
