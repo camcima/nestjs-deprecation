@@ -1,5 +1,12 @@
 # @camcima/nestjs-deprecation
 
+[![CI](https://github.com/camcima/nestjs-deprecation/actions/workflows/ci.yml/badge.svg)](https://github.com/camcima/nestjs-deprecation/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/camcima/nestjs-deprecation/actions/workflows/codeql.yml/badge.svg)](https://github.com/camcima/nestjs-deprecation/actions/workflows/codeql.yml)
+[![npm version](https://img.shields.io/npm/v/@camcima/nestjs-deprecation)](https://www.npmjs.com/package/@camcima/nestjs-deprecation)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![TypeScript](https://img.shields.io/badge/TypeScript-6-blue.svg)](https://www.typescriptlang.org/)
+[![Node.js](https://img.shields.io/badge/Node.js-20%20%7C%2022%20%7C%2024-green.svg)](https://nodejs.org/)
+
 NestJS library for RFC 9745 (`Deprecation`) and RFC 8594 (`Sunset`) HTTP response headers — decorator-driven API deprecation with Swagger and OpenTelemetry integration.
 
 ## Table of Contents
