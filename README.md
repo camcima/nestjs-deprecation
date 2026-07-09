@@ -281,12 +281,12 @@ Enforcement behaviors like returning `410 Gone` past sunset, or scheduled browno
 
 **Swagger subpath** (`@camcima/nestjs-deprecation/swagger`):
 
-| Export                        | Kind      | Description                                                                                    |
-| ----------------------------- | --------- | ---------------------------------------------------------------------------------------------- |
+| Export                        | Kind      | Description                                                                                                                                                                                                 |
+| ----------------------------- | --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `applyDeprecationDocs`        | Function  | Transforms the given OpenAPI document: marks `@Deprecated()` operations deprecated and documents their response headers. Signature: `applyDeprecationDocs(document, app, options?)` → returns the document. |
-| `DeprecationDocumentLike`     | Interface | Minimal structural view of the OpenAPI document accepted by `applyDeprecationDocs`             |
-| `ApplyDeprecationDocsOptions` | Interface | Options for `applyDeprecationDocs` (`filter`)                                                  |
-| `DiscoveredController`        | Interface | Structural controller view passed to the `filter` option                                       |
+| `DeprecationDocumentLike`     | Interface | Minimal structural view of the OpenAPI document accepted by `applyDeprecationDocs`                                                                                                                          |
+| `ApplyDeprecationDocsOptions` | Interface | Options for `applyDeprecationDocs` (`filter`)                                                                                                                                                               |
+| `DiscoveredController`        | Interface | Structural controller view passed to the `filter` option                                                                                                                                                    |
 
 **OTel subpath** (`@camcima/nestjs-deprecation/otel`):
 
