@@ -18,6 +18,43 @@
 
 NestJS library for RFC 9745 (`Deprecation`) and RFC 8594 (`Sunset`) HTTP response headers — decorator-driven API deprecation with Swagger and OpenTelemetry integration.
 
+## TL;DR
+
+Announce that an API endpoint is deprecated — and when it will be switched off — in a standard, machine-readable way, with a single decorator. Consumers learn about it from the response itself instead of a changelog or an email. You also get automatic Swagger docs and an optional OpenTelemetry metric that answers "who is _still_ calling this?".
+
+```bash
+npm install @camcima/nestjs-deprecation
+```
+
+```typescript
+import { Module, Controller, Get } from '@nestjs/common';
+import { DeprecationModule, Deprecated } from '@camcima/nestjs-deprecation';
+
+// 1. Register once in your root module.
+@Module({ imports: [DeprecationModule.forRoot()] })
+export class AppModule {}
+
+// 2. Decorate the endpoint (or the whole controller).
+@Controller('orders')
+export class OrdersController {
+  @Deprecated({ deprecatedAt: '2026-07-01', sunsetAt: '2027-01-01', successor: '/v2/orders' })
+  @Get()
+  list() {
+    /* ... */
+  }
+}
+```
+
+Every response from the decorated endpoint now carries:
+
+```
+Deprecation: @1782864000
+Sunset: Fri, 01 Jan 2027 00:00:00 GMT
+Link: </v2/orders>; rel="successor-version"
+```
+
+The library is **strictly informational** — it only adds headers (and optionally fires a telemetry hook); it never changes or blocks endpoint behavior. See [Quick Start](#quick-start) for the full walkthrough.
+
 ## Table of Contents
 
 - [What are RFC 9745 / RFC 8594?](#what-are-rfc-9745--rfc-8594)
@@ -144,9 +181,9 @@ DeprecationModule.forRootAsync({
 
 `DeprecationModuleOptions` accepts:
 
-| Option             | Type              | Default | Description                                                                                                                                                          |
-| ------------------ | ----------------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `enabled`          | `boolean`         | `true`  | Kill switch. When `false`, the interceptor is a pure pass-through.                                                                                                   |
+| Option             | Type                               | Default | Description                                                                                                                                                                                                                                                            |
+| ------------------ | ---------------------------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `enabled`          | `boolean`                          | `true`  | Kill switch. When `false`, the interceptor is a pure pass-through.                                                                                                                                                                                                     |
 | `onDeprecatedCall` | `(event) => void \| Promise<void>` | —       | Invoked on every request to a deprecated endpoint, inline before the handler runs. See [Telemetry](#telemetry). Errors — thrown synchronously or via a rejected promise — are caught and logged; they never affect the response. Defer slow work off the request path. |
 
 ## Swagger integration
@@ -185,11 +222,9 @@ SwaggerModule.setup('/api', app, applyDeprecationDocs(document, app));
 `applyDeprecationDocs(document, app, options?)` accepts an optional `filter` callback to skip specific controllers per document:
 
 ```typescript
-const publicDocument = applyDeprecationDocs(
-  SwaggerModule.createDocument(app, config),
-  app,
-  { filter: (controller) => controller.name !== 'InternalController' },
-);
+const publicDocument = applyDeprecationDocs(SwaggerModule.createDocument(app, config), app, {
+  filter: (controller) => controller.name !== 'InternalController',
+});
 ```
 
 If `DiscoveryModule` is not imported, `applyDeprecationDocs` throws a clear setup error naming the fix, rather than failing silently.
@@ -272,7 +307,7 @@ Enforcement behaviors like returning `410 Gone` past sunset, or scheduled browno
 | `DeprecatedOptions`             | Interface        | Options accepted by `@Deprecated()`                                                               |
 | `DeprecationMetadata`           | Interface        | Precomputed, frozen wire values stored as Reflect metadata                                        |
 | `DeprecatedCallEvent`           | Interface        | Shape of the event passed to `onDeprecatedCall`                                                   |
-| `DeprecatedCallListener`        | Type             | `` `(event: DeprecatedCallEvent) => void \| Promise<void>` ``                                    |
+| `DeprecatedCallListener`        | Type             | `` `(event: DeprecatedCallEvent) => void \| Promise<void>` ``                                     |
 | `DeprecationModuleOptions`      | Interface        | Options accepted by `forRoot()`                                                                   |
 | `DeprecationModuleAsyncOptions` | Interface        | Options accepted by `forRootAsync()`                                                              |
 | `LinkRelation`                  | Interface        | `{ rel: string; href: string; type?: string }` — one entry in `links`                             |
