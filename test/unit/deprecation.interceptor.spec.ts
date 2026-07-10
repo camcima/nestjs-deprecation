@@ -198,11 +198,14 @@ describe('DeprecationInterceptor', () => {
     expect(events).toHaveLength(1);
   });
 
-  it.each([null, 'nope', 42])('rejects non-object module options at boot: %j', (options) => {
-    expect(() => new DeprecationInterceptor(new Reflector(), options as never)).toThrow(
-      /options must be an object/,
-    );
-  });
+  it.each([[null], ['nope'], [42], [[]]])(
+    'rejects non-object module options at boot: %j',
+    (options) => {
+      expect(() => new DeprecationInterceptor(new Reflector(), options as never)).toThrow(
+        /options must be an object/,
+      );
+    },
+  );
 
   it('rejects a non-function onDeprecatedCall at boot', () => {
     expect(

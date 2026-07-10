@@ -45,6 +45,9 @@ export function buildDeprecationMetadata(
     });
   }
   for (const [index, custom] of (options.links ?? []).entries()) {
+    if (typeof custom !== 'object' || custom === null) {
+      throw new Error(`[nestjs-deprecation] ${where}: "links[${index}]" must be an object.`);
+    }
     if (typeof custom.rel !== 'string' || custom.rel.length === 0) {
       throw new Error(
         `[nestjs-deprecation] ${where}: "links[${index}].rel" must be a non-empty string.`,

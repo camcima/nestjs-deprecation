@@ -107,6 +107,8 @@ describe('buildDeprecationMetadata', () => {
     ],
     [{ deprecatedAt: '2026-07-01T00:00:00Z', note: 42 }, /"note" must be a string/],
     [{ deprecatedAt: '2026-07-01T00:00:00Z', links: 'nope' }, /"links" must be an array/],
+    [{ deprecatedAt: '2026-07-01T00:00:00Z', links: [null] }, /"links\[0\]" must be an object/],
+    [{ deprecatedAt: '2026-07-01T00:00:00Z', links: ['nope'] }, /"links\[0\]" must be an object/],
     [
       { deprecatedAt: '2026-07-01T00:00:00Z', links: [{ rel: 'alternate', href: '/v2', type: 7 }] },
       /"links\[0\]\.type" must be a string/,

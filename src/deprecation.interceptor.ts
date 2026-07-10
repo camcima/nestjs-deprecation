@@ -110,9 +110,10 @@ export class DeprecationInterceptor implements NestInterceptor {
  */
 function validateModuleOptions(options: unknown): DeprecationModuleOptions {
   if (options === undefined) return {};
-  if (options === null || typeof options !== 'object') {
+  if (options === null || typeof options !== 'object' || Array.isArray(options)) {
+    const got = options === null ? 'null' : Array.isArray(options) ? 'array' : typeof options;
     throw new Error(
-      `[nestjs-deprecation] DeprecationModule options must be an object, got: ${options === null ? 'null' : typeof options}. Check your forRoot()/forRootAsync() configuration.`,
+      `[nestjs-deprecation] DeprecationModule options must be an object, got: ${got}. Check your forRoot()/forRootAsync() configuration.`,
     );
   }
   const { enabled, onDeprecatedCall } = options as DeprecationModuleOptions;
