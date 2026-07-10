@@ -11,7 +11,14 @@ describe('Fastify e2e', () => {
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
       imports: [
-        createAppModule({ onDeprecatedCall: (e) => events.push(e) }, [linkSettingProvider]),
+        createAppModule(
+          {
+            onDeprecatedCall: (e) => {
+              events.push(e);
+            },
+          },
+          [linkSettingProvider],
+        ),
       ],
     }).compile();
     app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());

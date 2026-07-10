@@ -37,6 +37,7 @@ function createHarness(
   options: DeprecationModuleOptions = {},
   existingHeaders: Record<string, string> = {},
   contextType = 'http',
+  request: Record<string, unknown> = { method: 'GET', route: { path: '/orders' } },
 ): Harness {
   const headers: Record<string, string> = { ...existingHeaders };
   const response = {
@@ -45,7 +46,6 @@ function createHarness(
     },
     getHeader: (name: string) => headers[name],
   };
-  const request = { method: 'GET', route: { path: '/orders' } };
   const context = {
     getType: () => contextType,
     getHandler: () => handler,
@@ -115,7 +115,9 @@ describe('DeprecationInterceptor', () => {
   it('invokes onDeprecatedCall with the event', async () => {
     const events: DeprecatedCallEvent[] = [];
     const { interceptor, context } = createHarness(OrdersController.prototype.list, {
-      onDeprecatedCall: (event) => events.push(event),
+      onDeprecatedCall: (event) => {
+        events.push(event);
+      },
     });
     await firstValueFrom(interceptor.intercept(context, next));
     expect(events).toHaveLength(1);
@@ -132,7 +134,9 @@ describe('DeprecationInterceptor', () => {
   it('reports isPastSunset=true when the sunset date has passed', async () => {
     const events: DeprecatedCallEvent[] = [];
     const { interceptor, context } = createHarness(OrdersController.prototype.legacy, {
-      onDeprecatedCall: (event) => events.push(event),
+      onDeprecatedCall: (event) => {
+        events.push(event);
+      },
     });
     await firstValueFrom(interceptor.intercept(context, next));
     expect(events[0].isPastSunset).toBe(true);
@@ -155,5 +159,80 @@ describe('DeprecationInterceptor', () => {
       throw new Error('headers already sent');
     };
     await expect(firstValueFrom(interceptor.intercept(context, next))).resolves.toBe('ok');
+  });
+
+  it('contains rejected async listeners without an unhandled rejection', async () => {
+    const unhandled: unknown[] = [];
+    const capture = (reason: unknown) => unhandled.push(reason);
+    process.on('unhandledRejection', capture);
+    try {
+      const { interceptor, context, headers } = createHarness(OrdersController.prototype.list, {
+        onDeprecatedCall: async () => {
+          throw new Error('async listener boom');
+        },
+      });
+      await expect(firstValueFrom(interceptor.intercept(context, next))).resolves.toBe('ok');
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(unhandled).toEqual([]);
+      expect(headers.Deprecation).toBe('@1782864000');
+    } finally {
+      process.off('unhandledRejection', capture);
+    }
+  });
+
+  it('skips when another interceptor instance already wrote the Deprecation header', async () => {
+    const events: DeprecatedCallEvent[] = [];
+    const options: DeprecationModuleOptions = {
+      onDeprecatedCall: (event) => {
+        events.push(event);
+      },
+    };
+    const { interceptor, context, headers } = createHarness(
+      OrdersController.prototype.list,
+      options,
+    );
+    const second = new DeprecationInterceptor(new Reflector(), options);
+    await firstValueFrom(interceptor.intercept(context, next));
+    await firstValueFrom(second.intercept(context, next));
+    expect(headers.Link).toBe('</v2/orders>; rel="successor-version"');
+    expect(events).toHaveLength(1);
+  });
+
+  it.each([[null], ['nope'], [42], [[]]])(
+    'rejects non-object module options at boot: %j',
+    (options) => {
+      expect(() => new DeprecationInterceptor(new Reflector(), options as never)).toThrow(
+        /options must be an object/,
+      );
+    },
+  );
+
+  it('rejects a non-function onDeprecatedCall at boot', () => {
+    expect(
+      () => new DeprecationInterceptor(new Reflector(), { onDeprecatedCall: 'log' } as never),
+    ).toThrow(/"onDeprecatedCall" must be a function/);
+  });
+
+  it('rejects a non-boolean enabled at boot', () => {
+    expect(() => new DeprecationInterceptor(new Reflector(), { enabled: 'yes' } as never)).toThrow(
+      /"enabled" must be a boolean/,
+    );
+  });
+
+  it('falls back to "unknown", never the concrete URL, on unrecognised adapters', async () => {
+    const events: DeprecatedCallEvent[] = [];
+    const { interceptor, context } = createHarness(
+      OrdersController.prototype.list,
+      {
+        onDeprecatedCall: (event) => {
+          events.push(event);
+        },
+      },
+      {},
+      'http',
+      { method: 'GET', url: '/orders/42?token=secret' },
+    );
+    await firstValueFrom(interceptor.intercept(context, next));
+    expect(events[0].route).toBe('unknown');
   });
 });

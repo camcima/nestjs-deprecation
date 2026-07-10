@@ -2,6 +2,10 @@ import swc from 'unplugin-swc';
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
+  // unplugin-swc disables Vitest's esbuild transform; Vitest 4 additionally
+  // needs oxc disabled explicitly, or it transforms with Oxc (which does not
+  // emit decorator metadata) and warns on every run.
+  oxc: false,
   test: {
     globals: true,
     environment: 'node',

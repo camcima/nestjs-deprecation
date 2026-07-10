@@ -71,7 +71,7 @@ pnpm add @camcima/nestjs-deprecation
 
 ## Quick Start
 
-Register `DeprecationModule.forRoot()` once in your root `AppModule`. It registers a global `APP_INTERCEPTOR` that writes deprecation headers on any handler or controller decorated with `@Deprecated()`.
+Register `DeprecationModule.forRoot()` once in your root `AppModule`. It registers a global `APP_INTERCEPTOR` that writes deprecation headers on any handler or controller decorated with `@Deprecated()`. Accidentally importing it twice is tolerated — the first interceptor instance wins and later ones skip, so headers and telemetry are never duplicated — but register it once, in the root module.
 
 ```typescript
 // app.module.ts
@@ -147,7 +147,7 @@ DeprecationModule.forRootAsync({
 | Option             | Type              | Default | Description                                                                                                                                                          |
 | ------------------ | ----------------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `enabled`          | `boolean`         | `true`  | Kill switch. When `false`, the interceptor is a pure pass-through.                                                                                                   |
-| `onDeprecatedCall` | `(event) => void` | —       | Invoked on every request to a deprecated endpoint. See [Telemetry](#telemetry). Errors thrown by the listener are caught and logged; they never affect the response. |
+| `onDeprecatedCall` | `(event) => void \| Promise<void>` | —       | Invoked on every request to a deprecated endpoint, inline before the handler runs. See [Telemetry](#telemetry). Errors — thrown synchronously or via a rejected promise — are caught and logged; they never affect the response. Defer slow work off the request path. |
 
 ## Swagger integration
 
@@ -155,9 +155,9 @@ The `./swagger` subpath is optional and requires `@nestjs/swagger` (already a co
 
 1. Sets `deprecated: true` on the OpenAPI operation.
 2. Appends a generated Markdown block to the operation description (deprecation date, sunset date, `note`, links) — merged with, not clobbering, any `@ApiOperation()` you already applied.
-3. Documents the `Deprecation` / `Sunset` / `Link` response headers with example values.
+3. Documents the `Deprecation` / `Sunset` / `Link` response headers with example values on every response of the operation.
 
-Add `DiscoveryModule` (from `@nestjs/core`) to your application module, and call `applyDeprecationDocs(app)` inside the lazy document factory passed to `SwaggerModule.setup()` — this ordering matters, since the decoration must run before the OpenAPI document is built:
+Add `DiscoveryModule` (from `@nestjs/core`) to your application module, create the OpenAPI document, and pass it through `applyDeprecationDocs(document, app)`. The transform mutates and returns the given document instance only — it never touches decorator metadata, so you can build multiple differently-filtered documents in any order and each one is independent.
 
 ```typescript
 // app.module.ts
@@ -177,22 +177,24 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { applyDeprecationDocs } from '@camcima/nestjs-deprecation/swagger';
 
 const config = new DocumentBuilder().setTitle('My API').build();
+const document = SwaggerModule.createDocument(app, config);
 
-SwaggerModule.setup('/api', app, () => {
-  applyDeprecationDocs(app);
-  return SwaggerModule.createDocument(app, config);
-});
+SwaggerModule.setup('/api', app, applyDeprecationDocs(document, app));
 ```
 
-`applyDeprecationDocs(app, options?)` accepts an optional `filter` callback to skip specific controllers:
+`applyDeprecationDocs(document, app, options?)` accepts an optional `filter` callback to skip specific controllers per document:
 
 ```typescript
-applyDeprecationDocs(app, {
-  filter: (controller) => controller.name !== 'HealthController',
-});
+const publicDocument = applyDeprecationDocs(
+  SwaggerModule.createDocument(app, config),
+  app,
+  { filter: (controller) => controller.name !== 'InternalController' },
+);
 ```
 
 If `DiscoveryModule` is not imported, `applyDeprecationDocs` throws a clear setup error naming the fix, rather than failing silently.
+
+Routes are matched by recomputing each handler's route path; an application-wide `setGlobalPrefix()` is resolved automatically. Handlers whose document path cannot be resolved (e.g. custom URI versioning) are skipped with a logged warning rather than mis-annotated. One caveat: for documents built with the `include` option, a deprecated route excluded from the document can suffix-match a similarly named route from another module — prefer filtering with the `filter` callback (which skips the controller entirely) over relying on `include` alone.
 
 `applyDeprecationDocs` is independent of the `enabled` kill switch: it decorates the OpenAPI document at build time regardless of the runtime `enabled` setting, so if you disable the interceptor at runtime, stop calling `applyDeprecationDocs` too, to keep docs and runtime behavior in sync.
 
@@ -270,7 +272,7 @@ Enforcement behaviors like returning `410 Gone` past sunset, or scheduled browno
 | `DeprecatedOptions`             | Interface        | Options accepted by `@Deprecated()`                                                               |
 | `DeprecationMetadata`           | Interface        | Precomputed, frozen wire values stored as Reflect metadata                                        |
 | `DeprecatedCallEvent`           | Interface        | Shape of the event passed to `onDeprecatedCall`                                                   |
-| `DeprecatedCallListener`        | Type             | `(event: DeprecatedCallEvent) => void`                                                            |
+| `DeprecatedCallListener`        | Type             | `` `(event: DeprecatedCallEvent) => void \| Promise<void>` ``                                    |
 | `DeprecationModuleOptions`      | Interface        | Options accepted by `forRoot()`                                                                   |
 | `DeprecationModuleAsyncOptions` | Interface        | Options accepted by `forRootAsync()`                                                              |
 | `LinkRelation`                  | Interface        | `{ rel: string; href: string; type?: string }` — one entry in `links`                             |
@@ -279,11 +281,12 @@ Enforcement behaviors like returning `410 Gone` past sunset, or scheduled browno
 
 **Swagger subpath** (`@camcima/nestjs-deprecation/swagger`):
 
-| Export                        | Kind      | Description                                                                                    |
-| ----------------------------- | --------- | ---------------------------------------------------------------------------------------------- |
-| `applyDeprecationDocs`        | Function  | Auto-applies `deprecated: true` + header docs to discovered controllers via `DiscoveryService` |
-| `ApplyDeprecationDocsOptions` | Interface | Options for `applyDeprecationDocs` (`filter`)                                                  |
-| `DiscoveredController`        | Interface | Structural controller view passed to the `filter` option                                       |
+| Export                        | Kind      | Description                                                                                                                                                                                                 |
+| ----------------------------- | --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `applyDeprecationDocs`        | Function  | Transforms the given OpenAPI document: marks `@Deprecated()` operations deprecated and documents their response headers. Signature: `applyDeprecationDocs(document, app, options?)` → returns the document. |
+| `DeprecationDocumentLike`     | Interface | Minimal structural view of the OpenAPI document accepted by `applyDeprecationDocs`                                                                                                                          |
+| `ApplyDeprecationDocsOptions` | Interface | Options for `applyDeprecationDocs` (`filter`)                                                                                                                                                               |
+| `DiscoveredController`        | Interface | Structural controller view passed to the `filter` option                                                                                                                                                    |
 
 **OTel subpath** (`@camcima/nestjs-deprecation/otel`):
 
