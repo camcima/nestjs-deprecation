@@ -1,6 +1,6 @@
 {
   "name": "@camcima/nestjs-deprecation",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "NestJS library for RFC 9745 (Deprecation) and RFC 8594 (Sunset) HTTP response headers, with Swagger and OpenTelemetry integration",
   "license": "MIT",
   "author": "Carlos Cima",
