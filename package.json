@@ -102,5 +102,10 @@
     "typescript-eslint": "^8.65.0",
     "unplugin-swc": "^1.5.9",
     "vitest": "^4.1.9"
+  },
+  "pnpm": {
+    "overrides": {
+      "find-my-way": "^9.7.0"
+    }
   }
 }
