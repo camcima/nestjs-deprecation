@@ -20,7 +20,7 @@ NestJS library for RFC 9745 (`Deprecation`) and RFC 8594 (`Sunset`) HTTP respons
 
 ## TL;DR
 
-Announce that an API endpoint is deprecated — and when it will be switched off — in a standard, machine-readable way, with a single decorator. Consumers learn about it from the response itself instead of a changelog or an email. You also get automatic Swagger docs and an optional OpenTelemetry metric that answers "who is _still_ calling this?".
+Announce that an API endpoint is deprecated — and when it will be switched off — in a standard, machine-readable way, with a single decorator. Consumers learn about it from the response itself instead of a changelog or an email. You also get opt-in Swagger docs and an optional OpenTelemetry metric that answers "who is _still_ calling this?" — two extra lines of setup each, see below.
 
 ```bash
 npm install @camcima/nestjs-deprecation
