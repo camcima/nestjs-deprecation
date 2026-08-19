@@ -5,6 +5,7 @@ export type {
   DeprecatedOptions,
   DeprecationMetadata,
   DeprecationModuleOptions,
+  DeprecationOptionsFactory,
   LinkRelation,
 } from './deprecation.interfaces';
 export { DeprecationInterceptor } from './deprecation.interceptor';

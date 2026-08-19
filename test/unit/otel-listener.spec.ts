@@ -1,3 +1,4 @@
+import { metrics } from '@opentelemetry/api';
 import {
   AggregationTemporality,
   InMemoryMetricExporter,
@@ -57,6 +58,31 @@ describe('createOtelDeprecationListener', () => {
       expect.objectContaining({ 'deprecation.past_sunset': true }),
     );
     await meterProvider.shutdown();
+  });
+
+  it('records through a global meter provider registered after creation', async () => {
+    // The OTel metrics API has no proxy provider: before the SDK starts,
+    // metrics.getMeterProvider() hands back the permanent no-op. A listener
+    // built inside a @Module() decorator is created in exactly that window.
+    metrics.disable();
+    const listener = createOtelDeprecationListener();
+
+    const exporter = new InMemoryMetricExporter(AggregationTemporality.CUMULATIVE);
+    const reader = new PeriodicExportingMetricReader({ exporter, exportIntervalMillis: 3600_000 });
+    const meterProvider = new MeterProvider({ readers: [reader] });
+    metrics.setGlobalMeterProvider(meterProvider);
+
+    try {
+      listener(makeEvent());
+      await reader.forceFlush();
+      const metric = (exporter.getMetrics()[0]?.scopeMetrics ?? [])
+        .flatMap((s) => s.metrics)
+        .find((m) => m.descriptor.name === DEPRECATED_REQUESTS_METRIC);
+      expect(metric?.dataPoints ?? []).toHaveLength(1);
+    } finally {
+      metrics.disable();
+      await meterProvider.shutdown();
+    }
   });
 
   it('omits the sunset_date attribute when no sunset is set', async () => {

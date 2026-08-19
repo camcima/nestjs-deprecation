@@ -3,7 +3,11 @@
   "compilerOptions": {
     "rootDir": "./src",
     "outDir": "./dist",
-    "stripInternal": true
+    "stripInternal": true,
+    // Emitted maps reference ../src/*.ts, so src/ is published alongside dist/
+    // (see "files" in package.json). Declaration maps make go-to-definition
+    // land on the real TypeScript instead of the generated .d.ts.
+    "declarationMap": true
   },
   "include": ["src/**/*"],
   "exclude": ["test", "dist", "node_modules"]

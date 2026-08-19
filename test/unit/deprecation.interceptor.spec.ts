@@ -1,5 +1,5 @@
 import 'reflect-metadata';
-import { CallHandler, ExecutionContext } from '@nestjs/common';
+import { CallHandler, ExecutionContext, Logger } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { firstValueFrom, of, throwError } from 'rxjs';
 import { DeprecatedCallEvent, DeprecationModuleOptions } from '../../src/deprecation.interfaces';
@@ -180,7 +180,25 @@ describe('DeprecationInterceptor', () => {
     }
   });
 
-  it('skips when another interceptor instance already wrote the Deprecation header', async () => {
+  it('signals normally when unrelated middleware already set a Deprecation header', async () => {
+    const events: DeprecatedCallEvent[] = [];
+    const { interceptor, context, headers } = createHarness(
+      OrdersController.prototype.list,
+      {
+        onDeprecatedCall: (event) => {
+          events.push(event);
+        },
+      },
+      { Deprecation: '@1000000000' },
+    );
+    await firstValueFrom(interceptor.intercept(context, next));
+    expect(headers.Deprecation).toBe('@1782864000');
+    expect(headers.Sunset).toBe('Fri, 01 Jan 2027 00:00:00 GMT');
+    expect(headers.Link).toBe('</v2/orders>; rel="successor-version"');
+    expect(events).toHaveLength(1);
+  });
+
+  it('skips when a sibling interceptor instance already signalled this request', async () => {
     const events: DeprecatedCallEvent[] = [];
     const options: DeprecationModuleOptions = {
       onDeprecatedCall: (event) => {
@@ -217,6 +235,150 @@ describe('DeprecationInterceptor', () => {
     expect(() => new DeprecationInterceptor(new Reflector(), { enabled: 'yes' } as never)).toThrow(
       /"enabled" must be a boolean/,
     );
+  });
+
+  it('reads decorator metadata once per handler instead of on every request', async () => {
+    const lookup = vi.spyOn(Reflector.prototype, 'getAllAndOverride');
+    try {
+      const { interceptor, context } = createHarness(OrdersController.prototype.fresh);
+      await firstValueFrom(interceptor.intercept(context, next));
+      await firstValueFrom(interceptor.intercept(context, next));
+      await firstValueFrom(interceptor.intercept(context, next));
+      expect(lookup).toHaveBeenCalledTimes(1);
+    } finally {
+      lookup.mockRestore();
+    }
+  });
+
+  it('caches metadata per controller, so an inherited handler keeps its own', async () => {
+    class BaseController {
+      @Deprecated({ deprecatedAt: '2026-07-01T00:00:00Z' })
+      shared() {
+        return [];
+      }
+    }
+    class ChildController extends BaseController {}
+    const handler = BaseController.prototype.shared;
+    const interceptor = new DeprecationInterceptor(new Reflector(), {});
+    const headersFor = async (controller: unknown) => {
+      const headers: Record<string, string> = {};
+      const response = {
+        header: (name: string, value: string) => {
+          headers[name] = value;
+        },
+      };
+      const context = {
+        getType: () => 'http',
+        getHandler: () => handler,
+        getClass: () => controller,
+        switchToHttp: () => ({
+          getResponse: () => response,
+          getRequest: () => ({ method: 'GET', route: { path: '/x' } }),
+        }),
+      } as unknown as ExecutionContext;
+      await firstValueFrom(interceptor.intercept(context, next));
+      return headers;
+    };
+    expect((await headersFor(BaseController)).Deprecation).toBe('@1782864000');
+    expect((await headersFor(ChildController)).Deprecation).toBe('@1782864000');
+  });
+
+  it('logs a repeating listener failure once, and again when the failure changes', async () => {
+    const warn = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    try {
+      let failure = 'listener boom';
+      const interceptor = new DeprecationInterceptor(new Reflector(), {
+        onDeprecatedCall: () => {
+          throw new Error(failure);
+        },
+      });
+      // A fresh request each time: a hot deprecated route with a permanently
+      // broken listener must not log at full request rate.
+      const invoke = async () => {
+        const context = {
+          getType: () => 'http',
+          getHandler: () => OrdersController.prototype.list,
+          getClass: () => OrdersController,
+          switchToHttp: () => ({
+            getResponse: () => ({ header: () => undefined }),
+            getRequest: () => ({ method: 'GET', route: { path: '/orders' } }),
+          }),
+        } as unknown as ExecutionContext;
+        await firstValueFrom(interceptor.intercept(context, next));
+      };
+
+      await invoke();
+      await invoke();
+      await invoke();
+      expect(warn).toHaveBeenCalledTimes(1);
+
+      failure = 'a different boom';
+      await invoke();
+      expect(warn).toHaveBeenCalledTimes(2);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('completes the request even when the execution context itself throws', async () => {
+    const interceptor = new DeprecationInterceptor(new Reflector(), {});
+    const context = {
+      getType: () => {
+        throw new Error('context exploded');
+      },
+    } as unknown as ExecutionContext;
+    await expect(firstValueFrom(interceptor.intercept(context, next))).resolves.toBe('ok');
+  });
+
+  it('defaults to an empty configuration when no options are provided', async () => {
+    const interceptor = new DeprecationInterceptor(new Reflector());
+    const { context, headers } = createHarness(OrdersController.prototype.list);
+    await firstValueFrom(interceptor.intercept(context, next));
+    expect(headers.Deprecation).toBe('@1782864000');
+  });
+
+  it('still writes headers when the adapter exposes no usable request object', async () => {
+    const events: DeprecatedCallEvent[] = [];
+    const headers: Record<string, string> = {};
+    const interceptor = new DeprecationInterceptor(new Reflector(), {
+      onDeprecatedCall: (event) => {
+        events.push(event);
+      },
+    });
+    const context = {
+      getType: () => 'http',
+      getHandler: () => OrdersController.prototype.list,
+      getClass: () => OrdersController,
+      switchToHttp: () => ({
+        getResponse: () => ({
+          header: (name: string, value: string) => {
+            headers[name] = value;
+          },
+        }),
+        getRequest: () => undefined,
+      }),
+    } as unknown as ExecutionContext;
+
+    await expect(firstValueFrom(interceptor.intercept(context, next))).resolves.toBe('ok');
+    expect(headers.Deprecation).toBe('@1782864000');
+    expect(events).toHaveLength(0); // the event has no request to describe
+  });
+
+  it('reports UNKNOWN when the request carries no method', async () => {
+    const events: DeprecatedCallEvent[] = [];
+    const { interceptor, context } = createHarness(
+      OrdersController.prototype.list,
+      {
+        onDeprecatedCall: (event) => {
+          events.push(event);
+        },
+      },
+      {},
+      'http',
+      { route: { path: '/orders' } },
+    );
+    await firstValueFrom(interceptor.intercept(context, next));
+    expect(events[0].method).toBe('UNKNOWN');
   });
 
   it('falls back to "unknown", never the concrete URL, on unrecognised adapters', async () => {

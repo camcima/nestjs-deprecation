@@ -51,3 +51,8 @@ export interface DeprecationModuleOptions {
   /** Invoked on every request to a deprecated endpoint. Errors are caught and logged. */
   onDeprecatedCall?: DeprecatedCallListener;
 }
+
+/** Implemented by the class passed to `forRootAsync({ useClass })` / `({ useExisting })`. */
+export interface DeprecationOptionsFactory {
+  createDeprecationOptions(): DeprecationModuleOptions | Promise<DeprecationModuleOptions>;
+}

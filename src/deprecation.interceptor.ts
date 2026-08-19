@@ -6,16 +6,29 @@ import {
   Logger,
   NestInterceptor,
   Optional,
+  Type,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { Observable } from 'rxjs';
 import { DEPRECATION_METADATA_KEY, DEPRECATION_MODULE_OPTIONS } from './deprecation.constants';
 import { DeprecationMetadata, DeprecationModuleOptions } from './deprecation.interfaces';
 
+/**
+ * Per-request "already signalled" marker. Registered globally by key so that
+ * two copies of this package in one dependency tree still dedupe each other.
+ */
+const SIGNALLED = Symbol.for('camcima:nestjs-deprecation:signalled');
+
 @Injectable()
 export class DeprecationInterceptor implements NestInterceptor {
   private readonly logger = new Logger(DeprecationInterceptor.name);
   private readonly options: DeprecationModuleOptions;
+  private readonly metadataCache = new WeakMap<
+    object,
+    WeakMap<object, DeprecationMetadata | null>
+  >();
+  /** Last warning emitted per category, to suppress per-request repeats. */
+  private readonly lastWarning = new Map<string, string>();
 
   constructor(
     private readonly reflector: Reflector,
@@ -32,26 +45,88 @@ export class DeprecationInterceptor implements NestInterceptor {
         return next.handle();
       }
 
-      const metadata = this.reflector.getAllAndOverride<DeprecationMetadata | undefined>(
-        DEPRECATION_METADATA_KEY,
-        [context.getHandler(), context.getClass()],
-      );
+      const metadata = this.resolveMetadata(context.getHandler(), context.getClass());
       if (metadata) {
-        const response = context.switchToHttp().getResponse();
+        const http = context.switchToHttp();
+        const request = http.getRequest<RouteCarrier>();
         // Tolerate duplicate module registration (forRoot() imported twice
         // creates two interceptor instances): the first writer wins; later
         // instances skip so Link relations and telemetry are not duplicated.
-        if (response.getHeader?.('Deprecation') === undefined) {
+        if (!this.claimRequest(request)) {
           // Write BEFORE next.handle() so headers survive thrown exceptions and
           // are flushed with the first byte of streaming responses.
-          this.writeHeaders(response, metadata);
-          this.notify(context, metadata);
+          this.writeHeaders(http.getResponse(), metadata);
+          this.notify(context, request, metadata);
         }
       }
     } catch (error) {
-      this.logger.warn(`Deprecation interceptor skipped: ${String(error)}`);
+      this.warnOnce('intercept', `Deprecation interceptor skipped: ${String(error)}`);
     }
     return next.handle();
+  }
+
+  /**
+   * These failures are per-request, so a permanently broken listener or a
+   * response that is always already sent would otherwise log at full request
+   * rate. Repeats of the same message are dropped; a message that changes
+   * still surfaces, so a new fault is never hidden behind an old one.
+   */
+  private warnOnce(category: string, message: string): void {
+    if (this.lastWarning.get(category) === message) return;
+    this.lastWarning.set(category, message);
+    this.logger.warn(message);
+  }
+
+  /**
+   * Decorator metadata is built once at boot and frozen, so it is resolved
+   * once per (handler, controller) pair rather than on every request — this
+   * interceptor is global and runs on undeprecated routes too. Keyed by
+   * controller as well as handler because an inherited handler resolves
+   * against each subclass's own class-level metadata. Both keys are held
+   * weakly, so nothing outlives the classes it came from.
+   */
+  private resolveMetadata(
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type -- what ExecutionContext.getHandler() returns
+    handler: Function,
+    controller: Type<unknown>,
+  ): DeprecationMetadata | undefined {
+    let byController = this.metadataCache.get(handler);
+    if (byController === undefined) {
+      byController = new WeakMap();
+      this.metadataCache.set(handler, byController);
+    }
+    const cached = byController.get(controller);
+    if (cached !== undefined) return cached ?? undefined;
+
+    const resolved =
+      this.reflector.getAllAndOverride<DeprecationMetadata | undefined>(DEPRECATION_METADATA_KEY, [
+        handler,
+        controller,
+      ]) ?? null;
+    byController.set(controller, resolved);
+    return resolved ?? undefined;
+  }
+
+  /**
+   * Claims this request for the first interceptor instance that reaches it,
+   * returning true when another instance already did.
+   *
+   * The marker lives on the request, not on the response headers: sibling
+   * instances share the request object, while a `Deprecation` header written
+   * by unrelated middleware (e.g. an app migrating off a hand-rolled solution)
+   * must not suppress this library's own Sunset/Link writes and telemetry.
+   */
+  private claimRequest(request: unknown): boolean {
+    if (typeof request !== 'object' || request === null) return false;
+    const marked = request as Record<PropertyKey, unknown>;
+    if (marked[SIGNALLED] === true) return true;
+    try {
+      marked[SIGNALLED] = true;
+    } catch {
+      // A frozen request cannot carry the marker. Signalling twice under
+      // duplicate registration beats not signalling at all.
+    }
+    return false;
   }
 
   private writeHeaders(
@@ -75,15 +150,18 @@ export class DeprecationInterceptor implements NestInterceptor {
         );
       }
     } catch (error) {
-      this.logger.warn(`Failed to write deprecation headers: ${String(error)}`);
+      this.warnOnce('headers', `Failed to write deprecation headers: ${String(error)}`);
     }
   }
 
-  private notify(context: ExecutionContext, metadata: DeprecationMetadata): void {
+  private notify(
+    context: ExecutionContext,
+    request: RouteCarrier,
+    metadata: DeprecationMetadata,
+  ): void {
     const listener = this.options.onDeprecatedCall;
     if (!listener) return;
     try {
-      const request = context.switchToHttp().getRequest();
       const result: unknown = listener({
         method: String(request.method ?? 'UNKNOWN'),
         route: resolveRoutePattern(request),
@@ -94,11 +172,14 @@ export class DeprecationInterceptor implements NestInterceptor {
       });
       if (isThenable(result)) {
         result.then(undefined, (error) => {
-          this.logger.warn(`onDeprecatedCall listener rejected: ${String(error)}`);
+          this.warnOnce(
+            'listener-rejected',
+            `onDeprecatedCall listener rejected: ${String(error)}`,
+          );
         });
       }
     } catch (error) {
-      this.logger.warn(`onDeprecatedCall listener threw: ${String(error)}`);
+      this.warnOnce('listener-threw', `onDeprecatedCall listener threw: ${String(error)}`);
     }
   }
 }
@@ -108,7 +189,7 @@ export class DeprecationInterceptor implements NestInterceptor {
  * returning null) must be a DI instantiation error, not a silent per-request
  * disablement of deprecation signalling.
  */
-function validateModuleOptions(options: unknown): DeprecationModuleOptions {
+export function validateModuleOptions(options: unknown): DeprecationModuleOptions {
   if (options === undefined) return {};
   if (options === null || typeof options !== 'object' || Array.isArray(options)) {
     const got = options === null ? 'null' : Array.isArray(options) ? 'array' : typeof options;
@@ -128,16 +209,20 @@ function validateModuleOptions(options: unknown): DeprecationModuleOptions {
   return options as DeprecationModuleOptions;
 }
 
+/** The route-pattern fields this library reads, across adapters. */
+interface RouteCarrier {
+  method?: unknown;
+  routeOptions?: { url?: string };
+  routerPath?: string;
+  route?: { path?: string };
+}
+
 /**
  * Route PATTERN across adapters: Fastify v4+ / Fastify v3 / Express.
  * Deliberately never falls back to request.url: a concrete URL carries path
  * ids and query strings, breaking the documented low-cardinality guarantee.
  */
-function resolveRoutePattern(request: {
-  routeOptions?: { url?: string };
-  routerPath?: string;
-  route?: { path?: string };
-}): string {
+function resolveRoutePattern(request: RouteCarrier): string {
   return request.routeOptions?.url ?? request.routerPath ?? request.route?.path ?? 'unknown';
 }
 

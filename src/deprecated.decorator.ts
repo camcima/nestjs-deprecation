@@ -18,8 +18,26 @@ export function Deprecated(options: DeprecatedOptions): MethodDecorator & ClassD
     propertyKey?: string | symbol,
     descriptor?: TypedPropertyDescriptor<unknown>,
   ) => {
-    if (propertyKey !== undefined && descriptor?.value) {
-      const where = `${target.constructor.name}.${String(propertyKey)}`;
+    if (propertyKey !== undefined) {
+      // On a member decorator, `target` is the prototype for instance members
+      // and the constructor itself for static ones.
+      const isStatic = typeof target === 'function';
+      const owner = isStatic
+        ? (target as { name?: string }).name
+        : (target.constructor as { name?: string } | undefined)?.name;
+      const where = `${owner ?? 'anonymous class'}.${String(propertyKey)}`;
+      if (isStatic) {
+        throw new Error(
+          `[nestjs-deprecation] ${where}: @Deprecated() cannot decorate a static method — Nest routes instance methods only.`,
+        );
+      }
+      // Getters and properties silently miss both the interceptor and the
+      // Swagger transform, which read metadata off the handler function.
+      if (typeof descriptor?.value !== 'function') {
+        throw new Error(
+          `[nestjs-deprecation] ${where}: @Deprecated() must decorate a controller class or a route handler method, but "${String(propertyKey)}" is not a method.`,
+        );
+      }
       Reflect.defineMetadata(
         DEPRECATION_METADATA_KEY,
         buildDeprecationMetadata(options, where),

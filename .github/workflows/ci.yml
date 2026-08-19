@@ -44,13 +44,12 @@ jobs:
       - run: pnpm run build
       - run: pnpm run test:cov
       - name: Upload coverage to Codecov
-        # Dependabot PRs run with a restricted token and no access to repository
-        # secrets, so CODECOV_TOKEN is empty and Codecov rejects the upload
-        # ("Token required because branch is protected"). With fail_ci_if_error
-        # that sinks the whole job. Skip the upload for Dependabot; coverage is
-        # still uploaded on pushes to main and on regular (non-bot) PRs.
-        if: matrix.node-version == 22 && github.actor != 'dependabot[bot]'
-        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v6
+        # One upload per commit is enough; the matrix runs the same suite on
+        # every Node version. Dependabot PRs are included: v7 uploads fine from
+        # a restricted token on a public repo, so the exclusion this step used
+        # to carry is no longer needed.
+        if: matrix.node-version == 22
+        uses: codecov/codecov-action@a99c28d3f0da835de33ff2feb2e15691c7b9641f # v7.0.0
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           directory: coverage

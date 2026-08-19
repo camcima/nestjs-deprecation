@@ -114,8 +114,73 @@ describe('buildDeprecationMetadata', () => {
       /"links\[0\]\.type" must be a string/,
     ],
     [{ deprecatedAt: '2026-07-01T00:00:00Z', link: 42 }, /"link" must be a string/],
+    [{ deprecatedAt: null }, /"deprecatedAt" must be a Date or an ISO 8601 string/],
+    [{ deprecatedAt: true }, /"deprecatedAt" must be a Date or an ISO 8601 string/],
+    [{ deprecatedAt: 1782864000 }, /Unix timestamps are not accepted/],
+    [
+      { deprecatedAt: '2026-07-01T00:00:00Z', sunsetAt: 1798761600 },
+      /Unix timestamps are not accepted/,
+    ],
+    [{ deprecatedAt: '2026-07-01T00:00:00' }, /"deprecatedAt" must include a timezone designator/],
+    [
+      { deprecatedAt: '2026-07-01T00:00:00Z', sunsetAt: '2027-01-01T12:30' },
+      /"sunsetAt" must include a timezone designator/,
+    ],
+    [
+      { deprecatedAt: '2026-07-01T00:00:00Z', link: '//evil.example/docs' },
+      /"link".*protocol-relative/,
+    ],
+    [
+      { deprecatedAt: '2026-07-01T00:00:00Z', links: [{ rel: 'alternate', href: '//x.example' }] },
+      /"links\[0\]\.href".*protocol-relative/,
+    ],
+    [
+      {
+        deprecatedAt: '2026-07-01T00:00:00Z',
+        link: 'https://docs.example.com/d',
+        links: [{ rel: 'deprecation', href: '/other' }],
+      },
+      /only one "deprecation" link relation/,
+    ],
+    [
+      {
+        deprecatedAt: '2026-07-01T00:00:00Z',
+        successor: '/v2/orders',
+        links: [{ rel: 'successor-version', href: '/v3/orders' }],
+      },
+      /only one "successor-version" link relation/,
+    ],
+    [
+      {
+        deprecatedAt: '2026-07-01T00:00:00Z',
+        links: [
+          { rel: 'deprecation', href: '/a' },
+          { rel: 'deprecation', href: '/b' },
+        ],
+      },
+      /only one "deprecation" link relation/,
+    ],
   ])('rejects invalid options: %j', (options, message) => {
     expect(() => buildDeprecationMetadata(options as never, WHERE)).toThrow(message);
+  });
+
+  it('accepts date-only strings as UTC midnight', () => {
+    const metadata = buildDeprecationMetadata({ deprecatedAt: '2026-07-01' }, WHERE);
+    expect(metadata.deprecationHeader).toBe('@1782864000');
+    expect(metadata.deprecatedAtIso).toBe('2026-07-01T00:00:00.000Z');
+  });
+
+  it('accepts an explicit UTC offset', () => {
+    const metadata = buildDeprecationMetadata({ deprecatedAt: '2026-07-01T02:00:00+02:00' }, WHERE);
+    expect(metadata.deprecatedAtIso).toBe('2026-07-01T00:00:00.000Z');
+  });
+
+  it('accepts a lone "deprecation" relation supplied through links', () => {
+    const metadata = buildDeprecationMetadata(
+      { deprecatedAt: '2026-07-01T00:00:00Z', links: [{ rel: 'deprecation', href: '/docs' }] },
+      WHERE,
+    );
+    expect(metadata.linkHeader).toBe('</docs>; rel="deprecation"');
   });
 
   it('names the decorated target in error messages', () => {

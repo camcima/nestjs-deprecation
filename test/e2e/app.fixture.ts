@@ -8,6 +8,7 @@ import {
   Module,
   NestInterceptor,
   Provider,
+  Search,
   StreamableFile,
   Type,
 } from '@nestjs/common';
@@ -72,6 +73,48 @@ export class LegacyController {
 }
 
 /**
+ * Its path ends in "/orders" like OrdersController's, so a document built with
+ * a global prefix has two paths sharing that suffix.
+ */
+@Controller('internal/orders')
+export class InternalOrdersController {
+  @Get()
+  list() {
+    return [];
+  }
+}
+
+/** Deprecated handlers declared on a base class, inherited by the controller. */
+export abstract class BaseReportsController {
+  @Deprecated({ deprecatedAt: '2026-07-01T00:00:00Z', sunsetAt: '2027-01-01T00:00:00Z' })
+  @Get('summary')
+  summary() {
+    return { summary: true };
+  }
+}
+
+@Controller('reports')
+export class ReportsController extends BaseReportsController {
+  @Get('fresh')
+  fresh() {
+    return { fresh: true };
+  }
+}
+
+/**
+ * A request method outside the OpenAPI eight. Opted into per test because
+ * Fastify's router does not accept every method Express does.
+ */
+@Controller('assets')
+export class AssetsController {
+  @Deprecated({ deprecatedAt: '2026-07-01T00:00:00Z' })
+  @Search('find')
+  search() {
+    return { found: true };
+  }
+}
+
+/**
  * Sets a Link header BEFORE the deprecation interceptor runs, to prove the
  * deprecation Link is appended, not overwritten. Registered ahead of
  * DeprecationModule so its APP_INTERCEPTOR executes first.
@@ -87,10 +130,17 @@ export class LinkSettingInterceptor implements NestInterceptor {
 export function createAppModule(
   options: DeprecationModuleOptions = {},
   extraProviders: Provider[] = [],
+  extraControllers: Type<unknown>[] = [],
 ): Type<unknown> {
   @Module({
     imports: [DiscoveryModule, DeprecationModule.forRoot(options)],
-    controllers: [OrdersController, LegacyController],
+    controllers: [
+      OrdersController,
+      LegacyController,
+      InternalOrdersController,
+      ReportsController,
+      ...extraControllers,
+    ],
     providers: extraProviders,
   })
   class AppModule {}

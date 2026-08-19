@@ -108,7 +108,7 @@ pnpm add @camcima/nestjs-deprecation
 
 ## Quick Start
 
-Register `DeprecationModule.forRoot()` once in your root `AppModule`. It registers a global `APP_INTERCEPTOR` that writes deprecation headers on any handler or controller decorated with `@Deprecated()`. Accidentally importing it twice is tolerated — the first interceptor instance wins and later ones skip, so headers and telemetry are never duplicated — but register it once, in the root module.
+Register `DeprecationModule.forRoot()` once in your root `AppModule`. It registers a global `APP_INTERCEPTOR` that writes deprecation headers on any handler or controller decorated with `@Deprecated()`. Accidentally importing it twice is tolerated — the first interceptor instance to see a request wins and later ones skip it, so headers and telemetry are never duplicated — but register it once, in the root module: which registration runs first follows module resolution order, so with two registrations it is the winner's options (and its `onDeprecatedCall`) that take effect.
 
 ```typescript
 // app.module.ts
@@ -165,7 +165,9 @@ Link: <https://docs.example.com/deprecations/orders-v1>; rel="deprecation", </v2
 | `links`        | `LinkRelation[]` | No       | Escape hatch for arbitrary RFC 8288 relations, appended after `link`/`successor`.        |
 | `note`         | `string`         | No       | Human note; never sent on the wire. Surfaces in Swagger docs and in the telemetry event. |
 
-Both dates accept a `Date` or an ISO 8601 string. Invalid options (unparseable dates, a `sunsetAt` before `deprecatedAt`, a malformed URL/path) throw **at decoration time** — i.e. when your application boots — rather than on the first matching request, so misconfiguration fails loudly and early. `@Deprecated()` can decorate a single handler method or an entire controller class; a method-level decorator overrides a class-level one on that method.
+Both dates accept a `Date` or an ISO 8601 string. A string carrying a time **must** include a timezone designator (`2026-07-01T00:00:00Z` or `...+02:00`); without one it would be read in the server's local timezone, making the emitted header depend on where the app runs. Date-only strings (`2026-07-01`) are unambiguous UTC and always fine.
+
+Invalid options — unparseable or untyped dates (including a unix timestamp passed as a number), a `sunsetAt` before `deprecatedAt`, a malformed URL/path, a `links` entry repeating the `link`/`successor` relation — throw **at decoration time**, i.e. when your application boots, rather than on the first matching request, so misconfiguration fails loudly and early. `@Deprecated()` can decorate a single handler method or an entire controller class; a method-level decorator overrides a class-level one on that method. Applying it to anything else (a getter, a property, a static method) throws too, rather than silently doing nothing.
 
 ### Async configuration
 
@@ -179,11 +181,28 @@ DeprecationModule.forRootAsync({
 });
 ```
 
+`forRootAsync` also accepts `useClass` or `useExisting`, pointing at a class that implements `DeprecationOptionsFactory`:
+
+```typescript
+import { DeprecationModuleOptions, DeprecationOptionsFactory } from '@camcima/nestjs-deprecation';
+
+@Injectable()
+export class DeprecationConfig implements DeprecationOptionsFactory {
+  constructor(private readonly config: ConfigService) {}
+
+  createDeprecationOptions(): DeprecationModuleOptions {
+    return { enabled: this.config.get<boolean>('DEPRECATION_HEADERS_ENABLED', true) };
+  }
+}
+
+DeprecationModule.forRootAsync({ imports: [ConfigModule], useClass: DeprecationConfig });
+```
+
 `DeprecationModuleOptions` accepts:
 
 | Option             | Type                               | Default | Description                                                                                                                                                                                                                                                            |
 | ------------------ | ---------------------------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `enabled`          | `boolean`                          | `true`  | Kill switch. When `false`, the interceptor is a pure pass-through.                                                                                                                                                                                                     |
+| `enabled`          | `boolean`                          | `true`  | Kill switch. `forRoot({ enabled: false })` does not register the interceptor at all, so it costs nothing per request; `forRootAsync` resolves the flag at runtime and short-circuits instead.                                                                          |
 | `onDeprecatedCall` | `(event) => void \| Promise<void>` | —       | Invoked on every request to a deprecated endpoint, inline before the handler runs. See [Telemetry](#telemetry). Errors — thrown synchronously or via a rejected promise — are caught and logged; they never affect the response. Defer slow work off the request path. |
 
 ## Swagger integration
@@ -229,7 +248,7 @@ const publicDocument = applyDeprecationDocs(SwaggerModule.createDocument(app, co
 
 If `DiscoveryModule` is not imported, `applyDeprecationDocs` throws a clear setup error naming the fix, rather than failing silently.
 
-Routes are matched by recomputing each handler's route path; an application-wide `setGlobalPrefix()` is resolved automatically. Handlers whose document path cannot be resolved (e.g. custom URI versioning) are skipped with a logged warning rather than mis-annotated. One caveat: for documents built with the `include` option, a deprecated route excluded from the document can suffix-match a similarly named route from another module — prefer filtering with the `filter` callback (which skips the controller entirely) over relying on `include` alone.
+Routes are matched by recomputing each handler's route path. An application-wide `setGlobalPrefix()` is read from the application and applied exactly, and handlers inherited from a base controller class are documented like any other. Paths using route parameters, named wildcards (`*splat`), or optional-parameter groups (`{/:id}`) are translated to their OpenAPI form, and request methods beyond the OpenAPI eight (such as `SEARCH`) are covered. Handlers whose document path still cannot be resolved (e.g. custom URI versioning, per-route prefixes) fall back to an unambiguous suffix match, and are skipped with a logged warning rather than mis-annotated. One caveat: for documents built with the `include` option, a deprecated route excluded from the document can suffix-match a similarly named route from another module — prefer filtering with the `filter` callback (which skips the controller entirely) over relying on `include` alone.
 
 `applyDeprecationDocs` is independent of the `enabled` kill switch: it decorates the OpenAPI document at build time regardless of the runtime `enabled` setting, so if you disable the interceptor at runtime, stop calling `applyDeprecationDocs` too, to keep docs and runtime behavior in sync.
 
@@ -294,7 +313,8 @@ Enforcement behaviors like returning `410 Gone` past sunset, or scheduled browno
 
 ## Known limitations
 
-- **`applyDeprecationDocs` reads each controller's own prototype.** A `@Deprecated()` handler _inherited_ from a base/abstract controller class (rather than declared directly on the concrete controller) is not currently picked up and decorated in the generated OpenAPI document. This is a Swagger-docs-only gap — the runtime `Deprecation`/`Sunset`/`Link` headers, written by the interceptor via `Reflector.getAllAndOverride`, are unaffected and work correctly regardless of inheritance.
+- **Guards run before interceptors.** A request rejected by a guard (401/403 from auth, 429 from throttling) never reaches the interceptor, so it carries no `Deprecation`/`Sunset`/`Link` headers and fires no `onDeprecatedCall` event. Clients whose credentials have expired — often the stalest integrations, and the ones most likely to be on a deprecated endpoint — will not see the signal, and migration dashboards undercount deprecated traffic by the guard-rejected share.
+- **Decorator composition.** The metadata is stored on the handler function itself. A third-party decorator that _replaces_ `descriptor.value` with a wrapper (rather than mutating it in place, as Nest's own decorators do) and is applied after `@Deprecated()` will drop the metadata, silently un-deprecating the endpoint. If you compose with wrapping decorators, keep `@Deprecated()` above them.
 - **Header write ordering.** The interceptor writes the `Deprecation`/`Sunset`/`Link` headers _before_ calling the route handler (`next.handle()`), so that they still land on thrown exceptions and streaming responses. A consequence: anything that sets a `Link` header _after_ that point — e.g. inside the handler body itself, or in an interceptor registered to run closer to the handler — will overwrite rather than merge with the deprecation `Link` value. Middleware or an interceptor registered _before_ `DeprecationModule`'s (so it runs first) is appended to correctly instead of overwritten.
 
 ## API Reference
@@ -309,7 +329,8 @@ Enforcement behaviors like returning `410 Gone` past sunset, or scheduled browno
 | `DeprecatedCallEvent`           | Interface        | Shape of the event passed to `onDeprecatedCall`                                                   |
 | `DeprecatedCallListener`        | Type             | `` `(event: DeprecatedCallEvent) => void \| Promise<void>` ``                                     |
 | `DeprecationModuleOptions`      | Interface        | Options accepted by `forRoot()`                                                                   |
-| `DeprecationModuleAsyncOptions` | Interface        | Options accepted by `forRootAsync()`                                                              |
+| `DeprecationModuleAsyncOptions` | Interface        | Options accepted by `forRootAsync()` (`useFactory`, `useClass`, or `useExisting`)                 |
+| `DeprecationOptionsFactory`     | Interface        | Implemented by the class given to `forRootAsync({ useClass })` / `({ useExisting })`              |
 | `LinkRelation`                  | Interface        | `{ rel: string; href: string; type?: string }` — one entry in `links`                             |
 | `DEPRECATION_METADATA_KEY`      | Constant         | Reflect metadata key under which `@Deprecated()` stores `DeprecationMetadata`                     |
 | `DEPRECATION_MODULE_OPTIONS`    | Symbol           | DI token for the module options                                                                   |

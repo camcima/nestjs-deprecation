@@ -44,6 +44,7 @@ export function buildDeprecationMetadata(
       href: assertHref(options.successor, 'successor', where),
     });
   }
+  const shorthandRels = new Set(links.map((link) => link.rel));
   for (const [index, custom] of (options.links ?? []).entries()) {
     if (typeof custom !== 'object' || custom === null) {
       throw new Error(`[nestjs-deprecation] ${where}: "links[${index}]" must be an object.`);
@@ -54,6 +55,7 @@ export function buildDeprecationMetadata(
       );
     }
     assertQuotedParamSafe(custom.rel, `links[${index}].rel`, where);
+    assertSingletonRel(custom.rel, links, shorthandRels, `links[${index}].rel`, where);
     if (custom.type !== undefined) {
       assertQuotedParamSafe(custom.type, `links[${index}].type`, where);
     }
@@ -75,7 +77,57 @@ export function buildDeprecationMetadata(
   });
 }
 
-function parseDateOption(value: Date | string, option: string, where: string): Date {
+/**
+ * RFC 9745 allows at most one "deprecation" relation, and a single successor is
+ * the only reading that makes "successor-version" actionable. Both have a
+ * dedicated shorthand option, so a duplicate is always a configuration mistake.
+ */
+const SINGLETON_RELS = new Map([
+  ['deprecation', 'link'],
+  ['successor-version', 'successor'],
+]);
+
+function assertSingletonRel(
+  rel: string,
+  accumulated: LinkRelation[],
+  shorthandRels: ReadonlySet<string>,
+  option: string,
+  where: string,
+): void {
+  const shorthandOption = SINGLETON_RELS.get(rel);
+  if (shorthandOption === undefined) return;
+  if (!accumulated.some((link) => link.rel === rel)) return;
+  const source = shorthandRels.has(rel)
+    ? `the "${shorthandOption}" option`
+    : 'an earlier "links" entry';
+  throw new Error(
+    `[nestjs-deprecation] ${where}: "${option}" is redundant — only one "${rel}" link relation is allowed (RFC 9745), and it is already provided by ${source}.`,
+  );
+}
+
+/** A trailing "Z"/"z" or a "+hh:mm"/"-hhmm" style UTC offset. */
+const TIMEZONE_DESIGNATOR = /(?:[Zz]|[+-]\d{2}:?\d{2})$/;
+
+function parseDateOption(value: unknown, option: string, where: string): Date {
+  if (!(value instanceof Date) && typeof value !== 'string') {
+    const hint =
+      typeof value === 'number'
+        ? ' Unix timestamps are not accepted — pass new Date(seconds * 1000) instead.'
+        : '';
+    throw new Error(
+      `[nestjs-deprecation] ${where}: "${option}" must be a Date or an ISO 8601 string, got: ${
+        value === null ? 'null' : typeof value
+      }.${hint}`,
+    );
+  }
+  // A date-time without an offset is parsed in the server's local timezone, so
+  // the emitted header would depend on where the app runs. Date-only strings
+  // are unambiguous (UTC) and stay allowed.
+  if (typeof value === 'string' && value.includes('T') && !TIMEZONE_DESIGNATOR.test(value)) {
+    throw new Error(
+      `[nestjs-deprecation] ${where}: "${option}" must include a timezone designator ("Z" or an offset such as "+02:00"), got: ${value}. Without one the value is interpreted in the server's local timezone.`,
+    );
+  }
   const date = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(date.getTime())) {
     throw new Error(
@@ -97,6 +149,14 @@ function assertHref(href: unknown, option: string, where: string): string {
   if (typeof href !== 'string') {
     throw new Error(
       `[nestjs-deprecation] ${where}: "${option}" must be a string, got: ${typeof href}`,
+    );
+  }
+  // "//host/path" is a network-path reference: it looks like an absolute path
+  // but resolves to a different origin, so a stray slash silently retargets the
+  // link. Require an explicit scheme instead.
+  if (href.startsWith('//')) {
+    throw new Error(
+      `[nestjs-deprecation] ${where}: "${option}" must be an absolute URL (with a scheme) or an absolute path; protocol-relative references such as ${href} are not allowed.`,
     );
   }
   if (!href.startsWith('/')) {
