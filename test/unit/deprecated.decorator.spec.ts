@@ -68,4 +68,41 @@ describe('@Deprecated', () => {
       return BadController;
     }).toThrow(/BadController\.broken.*"deprecatedAt"/s);
   });
+
+  it('rejects decoration of a getter, which no route handler can be', () => {
+    expect(() => {
+      class GetterController {
+        @Deprecated({ deprecatedAt: '2026-07-01T00:00:00Z' })
+        get orders() {
+          return [];
+        }
+      }
+      return GetterController;
+    }).toThrow(/GetterController\.orders.*is not a method/s);
+  });
+
+  it('rejects decoration of a property', () => {
+    class PropertyController {}
+    // What TypeScript emits for a property decorator: no descriptor at all.
+    const decorate = Deprecated({ deprecatedAt: '2026-07-01T00:00:00Z' }) as (
+      target: object,
+      propertyKey: string,
+      descriptor?: undefined,
+    ) => unknown;
+    expect(() => decorate(PropertyController.prototype, 'orders', undefined)).toThrow(
+      /PropertyController\.orders.*is not a method/s,
+    );
+  });
+
+  it('rejects decoration of a static method, which Nest never routes', () => {
+    expect(() => {
+      class StaticController {
+        @Deprecated({ deprecatedAt: '2026-07-01T00:00:00Z' })
+        static list() {
+          return [];
+        }
+      }
+      return StaticController;
+    }).toThrow(/StaticController\.list.*static method/s);
+  });
 });
