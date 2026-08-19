@@ -237,6 +237,52 @@ describe('DeprecationInterceptor', () => {
     );
   });
 
+  it('reads decorator metadata once per handler instead of on every request', async () => {
+    const lookup = vi.spyOn(Reflector.prototype, 'getAllAndOverride');
+    try {
+      const { interceptor, context } = createHarness(OrdersController.prototype.fresh);
+      await firstValueFrom(interceptor.intercept(context, next));
+      await firstValueFrom(interceptor.intercept(context, next));
+      await firstValueFrom(interceptor.intercept(context, next));
+      expect(lookup).toHaveBeenCalledTimes(1);
+    } finally {
+      lookup.mockRestore();
+    }
+  });
+
+  it('caches metadata per controller, so an inherited handler keeps its own', async () => {
+    class BaseController {
+      @Deprecated({ deprecatedAt: '2026-07-01T00:00:00Z' })
+      shared() {
+        return [];
+      }
+    }
+    class ChildController extends BaseController {}
+    const handler = BaseController.prototype.shared;
+    const interceptor = new DeprecationInterceptor(new Reflector(), {});
+    const headersFor = async (controller: unknown) => {
+      const headers: Record<string, string> = {};
+      const response = {
+        header: (name: string, value: string) => {
+          headers[name] = value;
+        },
+      };
+      const context = {
+        getType: () => 'http',
+        getHandler: () => handler,
+        getClass: () => controller,
+        switchToHttp: () => ({
+          getResponse: () => response,
+          getRequest: () => ({ method: 'GET', route: { path: '/x' } }),
+        }),
+      } as unknown as ExecutionContext;
+      await firstValueFrom(interceptor.intercept(context, next));
+      return headers;
+    };
+    expect((await headersFor(BaseController)).Deprecation).toBe('@1782864000');
+    expect((await headersFor(ChildController)).Deprecation).toBe('@1782864000');
+  });
+
   it('falls back to "unknown", never the concrete URL, on unrecognised adapters', async () => {
     const events: DeprecatedCallEvent[] = [];
     const { interceptor, context } = createHarness(

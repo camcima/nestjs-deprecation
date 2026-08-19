@@ -31,6 +31,31 @@ describe('DeprecationModule', () => {
     expect(moduleRef.get<DeprecationModuleOptions>(DEPRECATION_MODULE_OPTIONS)).toEqual({});
   });
 
+  it('omits the global interceptor when disabled synchronously', () => {
+    const dynamicModule = DeprecationModule.forRoot({ enabled: false });
+    expect(dynamicModule.providers).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ provide: APP_INTERCEPTOR })]),
+    );
+  });
+
+  it('keeps the interceptor for forRootAsync, where enabled is unknown until runtime', () => {
+    const dynamicModule = DeprecationModule.forRootAsync({
+      useFactory: async () => ({ enabled: false }),
+    });
+    expect(dynamicModule.providers).toEqual(
+      expect.arrayContaining([expect.objectContaining({ provide: APP_INTERCEPTOR })]),
+    );
+  });
+
+  it('validates synchronous options when the module is defined', () => {
+    expect(() => DeprecationModule.forRoot({ onDeprecatedCall: 'nope' } as never)).toThrow(
+      /"onDeprecatedCall" must be a function/,
+    );
+    expect(() => DeprecationModule.forRoot({ enabled: 'yes' } as never)).toThrow(
+      /"enabled" must be a boolean/,
+    );
+  });
+
   it('forRootAsync resolves options from a factory', async () => {
     const moduleRef = await Test.createTestingModule({
       imports: [

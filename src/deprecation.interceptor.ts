@@ -6,6 +6,7 @@ import {
   Logger,
   NestInterceptor,
   Optional,
+  Type,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { Observable } from 'rxjs';
@@ -22,6 +23,10 @@ const SIGNALLED = Symbol.for('camcima:nestjs-deprecation:signalled');
 export class DeprecationInterceptor implements NestInterceptor {
   private readonly logger = new Logger(DeprecationInterceptor.name);
   private readonly options: DeprecationModuleOptions;
+  private readonly metadataCache = new WeakMap<
+    object,
+    WeakMap<object, DeprecationMetadata | null>
+  >();
 
   constructor(
     private readonly reflector: Reflector,
@@ -38,10 +43,7 @@ export class DeprecationInterceptor implements NestInterceptor {
         return next.handle();
       }
 
-      const metadata = this.reflector.getAllAndOverride<DeprecationMetadata | undefined>(
-        DEPRECATION_METADATA_KEY,
-        [context.getHandler(), context.getClass()],
-      );
+      const metadata = this.resolveMetadata(context.getHandler(), context.getClass());
       if (metadata) {
         const http = context.switchToHttp();
         const request = http.getRequest<RouteCarrier>();
@@ -59,6 +61,36 @@ export class DeprecationInterceptor implements NestInterceptor {
       this.logger.warn(`Deprecation interceptor skipped: ${String(error)}`);
     }
     return next.handle();
+  }
+
+  /**
+   * Decorator metadata is built once at boot and frozen, so it is resolved
+   * once per (handler, controller) pair rather than on every request — this
+   * interceptor is global and runs on undeprecated routes too. Keyed by
+   * controller as well as handler because an inherited handler resolves
+   * against each subclass's own class-level metadata. Both keys are held
+   * weakly, so nothing outlives the classes it came from.
+   */
+  private resolveMetadata(
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type -- what ExecutionContext.getHandler() returns
+    handler: Function,
+    controller: Type<unknown>,
+  ): DeprecationMetadata | undefined {
+    let byController = this.metadataCache.get(handler);
+    if (byController === undefined) {
+      byController = new WeakMap();
+      this.metadataCache.set(handler, byController);
+    }
+    const cached = byController.get(controller);
+    if (cached !== undefined) return cached ?? undefined;
+
+    const resolved =
+      this.reflector.getAllAndOverride<DeprecationMetadata | undefined>(DEPRECATION_METADATA_KEY, [
+        handler,
+        controller,
+      ]) ?? null;
+    byController.set(controller, resolved);
+    return resolved ?? undefined;
   }
 
   /**
@@ -140,7 +172,7 @@ export class DeprecationInterceptor implements NestInterceptor {
  * returning null) must be a DI instantiation error, not a silent per-request
  * disablement of deprecation signalling.
  */
-function validateModuleOptions(options: unknown): DeprecationModuleOptions {
+export function validateModuleOptions(options: unknown): DeprecationModuleOptions {
   if (options === undefined) return {};
   if (options === null || typeof options !== 'object' || Array.isArray(options)) {
     const got = options === null ? 'null' : Array.isArray(options) ? 'array' : typeof options;
