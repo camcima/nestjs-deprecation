@@ -4,14 +4,14 @@ import { Test } from '@nestjs/testing';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { DeprecationModule } from '../../src';
 import { applyDeprecationDocs, ApplyDeprecationDocsOptions } from '../../src/swagger';
-import { createAppModule } from './app.fixture';
+import { AssetsController, createAppModule } from './app.fixture';
 
 describe('applyDeprecationDocs', () => {
   let app: INestApplication;
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
-      imports: [createAppModule()],
+      imports: [createAppModule({}, [], [AssetsController])],
     }).compile();
     app = moduleRef.createNestApplication();
     await app.init();
@@ -87,7 +87,48 @@ describe('applyDeprecationDocs', () => {
     expect(publicDoc.paths['/legacy'].get?.deprecated).toBe(true);
   });
 
-  it('resolves paths behind a global prefix via unique suffix match', async () => {
+  it('marks handlers inherited from a base controller class', () => {
+    const document = buildDocument();
+    expect(document.paths['/reports/summary'].get?.deprecated).toBe(true);
+    expect(document.paths['/reports/fresh'].get?.deprecated).toBeUndefined();
+  });
+
+  it('marks routes whose path uses wildcard and optional-parameter syntax', () => {
+    const document = buildDocument();
+    expect(document.paths['/assets/files/{splat}'].get?.deprecated).toBe(true);
+    expect(document.paths['/assets/opt/{id}'].get?.deprecated).toBe(true);
+  });
+
+  it('marks operations for non-CRUD request methods such as SEARCH', () => {
+    const document = buildDocument();
+    // SEARCH is a valid Nest route method that @nestjs/swagger emits, but it
+    // is not part of the OpenAPI PathItemObject type.
+    const pathItem = document.paths['/assets/find'] as unknown as Record<
+      string,
+      { deprecated?: boolean } | undefined
+    >;
+    expect(pathItem.search?.deprecated).toBe(true);
+  });
+
+  it('does not clobber a response header the user documented in another case', () => {
+    const document = SwaggerModule.createDocument(
+      app,
+      new DocumentBuilder().setTitle('fixture').build(),
+    );
+    const operation = document.paths['/orders'].get as {
+      responses: Record<string, { headers?: Record<string, unknown> }>;
+    };
+    const [firstResponse] = Object.values(operation.responses);
+    firstResponse.headers = { link: { description: 'pagination links' } };
+
+    applyDeprecationDocs(document, app);
+
+    const headerNames = Object.keys(firstResponse.headers ?? {});
+    expect(headerNames.filter((name) => name.toLowerCase() === 'link')).toEqual(['link']);
+    expect(firstResponse.headers?.link).toEqual({ description: 'pagination links' });
+  });
+
+  it('resolves paths behind a global prefix even when another path shares the suffix', async () => {
     const moduleRef = await Test.createTestingModule({
       imports: [createAppModule()],
     }).compile();
