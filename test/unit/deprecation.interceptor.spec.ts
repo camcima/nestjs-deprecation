@@ -1,5 +1,5 @@
 import 'reflect-metadata';
-import { CallHandler, ExecutionContext } from '@nestjs/common';
+import { CallHandler, ExecutionContext, Logger } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { firstValueFrom, of, throwError } from 'rxjs';
 import { DeprecatedCallEvent, DeprecationModuleOptions } from '../../src/deprecation.interfaces';
@@ -281,6 +281,43 @@ describe('DeprecationInterceptor', () => {
     };
     expect((await headersFor(BaseController)).Deprecation).toBe('@1782864000');
     expect((await headersFor(ChildController)).Deprecation).toBe('@1782864000');
+  });
+
+  it('logs a repeating listener failure once, and again when the failure changes', async () => {
+    const warn = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    try {
+      let failure = 'listener boom';
+      const interceptor = new DeprecationInterceptor(new Reflector(), {
+        onDeprecatedCall: () => {
+          throw new Error(failure);
+        },
+      });
+      // A fresh request each time: a hot deprecated route with a permanently
+      // broken listener must not log at full request rate.
+      const invoke = async () => {
+        const context = {
+          getType: () => 'http',
+          getHandler: () => OrdersController.prototype.list,
+          getClass: () => OrdersController,
+          switchToHttp: () => ({
+            getResponse: () => ({ header: () => undefined }),
+            getRequest: () => ({ method: 'GET', route: { path: '/orders' } }),
+          }),
+        } as unknown as ExecutionContext;
+        await firstValueFrom(interceptor.intercept(context, next));
+      };
+
+      await invoke();
+      await invoke();
+      await invoke();
+      expect(warn).toHaveBeenCalledTimes(1);
+
+      failure = 'a different boom';
+      await invoke();
+      expect(warn).toHaveBeenCalledTimes(2);
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   it('falls back to "unknown", never the concrete URL, on unrecognised adapters', async () => {

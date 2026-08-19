@@ -27,6 +27,8 @@ export class DeprecationInterceptor implements NestInterceptor {
     object,
     WeakMap<object, DeprecationMetadata | null>
   >();
+  /** Last warning emitted per category, to suppress per-request repeats. */
+  private readonly lastWarning = new Map<string, string>();
 
   constructor(
     private readonly reflector: Reflector,
@@ -58,9 +60,21 @@ export class DeprecationInterceptor implements NestInterceptor {
         }
       }
     } catch (error) {
-      this.logger.warn(`Deprecation interceptor skipped: ${String(error)}`);
+      this.warnOnce('intercept', `Deprecation interceptor skipped: ${String(error)}`);
     }
     return next.handle();
+  }
+
+  /**
+   * These failures are per-request, so a permanently broken listener or a
+   * response that is always already sent would otherwise log at full request
+   * rate. Repeats of the same message are dropped; a message that changes
+   * still surfaces, so a new fault is never hidden behind an old one.
+   */
+  private warnOnce(category: string, message: string): void {
+    if (this.lastWarning.get(category) === message) return;
+    this.lastWarning.set(category, message);
+    this.logger.warn(message);
   }
 
   /**
@@ -136,7 +150,7 @@ export class DeprecationInterceptor implements NestInterceptor {
         );
       }
     } catch (error) {
-      this.logger.warn(`Failed to write deprecation headers: ${String(error)}`);
+      this.warnOnce('headers', `Failed to write deprecation headers: ${String(error)}`);
     }
   }
 
@@ -158,11 +172,14 @@ export class DeprecationInterceptor implements NestInterceptor {
       });
       if (isThenable(result)) {
         result.then(undefined, (error) => {
-          this.logger.warn(`onDeprecatedCall listener rejected: ${String(error)}`);
+          this.warnOnce(
+            'listener-rejected',
+            `onDeprecatedCall listener rejected: ${String(error)}`,
+          );
         });
       }
     } catch (error) {
-      this.logger.warn(`onDeprecatedCall listener threw: ${String(error)}`);
+      this.warnOnce('listener-threw', `onDeprecatedCall listener threw: ${String(error)}`);
     }
   }
 }
