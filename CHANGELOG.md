@@ -13,9 +13,6 @@
 * applyDeprecationDocs now takes (document, app, options?)
 and returns the document; call it on the result of createDocument().
 
-Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
-Claude-Session: https://claude.ai/code/session_01PqgxM3wAFwevhyPnhxGDvf
-
 ### Features
 
 * make applyDeprecationDocs a pure per-document transform ([88b8daa](https://github.com/camcima/nestjs-deprecation/commit/88b8daaaf5f729e178c6d2c0c981171765a090fe))
