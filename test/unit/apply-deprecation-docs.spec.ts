@@ -1,5 +1,5 @@
 import 'reflect-metadata';
-import { Controller, Get, INestApplication } from '@nestjs/common';
+import { All, Controller, Get, INestApplication, Logger, Post } from '@nestjs/common';
 import { ApplicationConfig, DiscoveryService } from '@nestjs/core';
 import { Deprecated } from '../../src/deprecated.decorator';
 import { applyDeprecationDocs } from '../../src/swagger';
@@ -88,5 +88,113 @@ describe('applyDeprecationDocs', () => {
     const document = documentWith('/v1/orders');
     applyDeprecationDocs(document, stubApp([OrdersController]));
     expect(document.paths['/v1/orders'].get.deprecated).toBe(true);
+  });
+
+  it('falls back to suffix matching when the app cannot report a prefix', () => {
+    @Controller('orders')
+    class OrdersController {
+      @Deprecated({ deprecatedAt: '2026-07-01T00:00:00Z' })
+      @Get()
+      list() {
+        return null;
+      }
+    }
+
+    const app = {
+      get: (token: unknown) => {
+        if (token === DiscoveryService) {
+          return {
+            getControllers: () => [{ metatype: OrdersController, name: 'OrdersController' }],
+          };
+        }
+        throw new Error('ApplicationConfig is not available');
+      },
+    } as unknown as INestApplication;
+
+    const document = documentWith('/v1/orders');
+    applyDeprecationDocs(document, app);
+    expect(document.paths['/v1/orders'].get.deprecated).toBe(true);
+  });
+
+  it('marks every documented method of an @All() route', () => {
+    @Controller('orders')
+    class OrdersController {
+      @Deprecated({ deprecatedAt: '2026-07-01T00:00:00Z' })
+      @All('any')
+      any() {
+        return null;
+      }
+    }
+
+    const document = {
+      paths: {
+        '/orders/any': {
+          get: {} as Record<string, unknown>,
+          post: {} as Record<string, unknown>,
+          delete: {} as Record<string, unknown>,
+        },
+      },
+    };
+    applyDeprecationDocs(document, stubApp([OrdersController]));
+    expect(document.paths['/orders/any'].get.deprecated).toBe(true);
+    expect(document.paths['/orders/any'].post.deprecated).toBe(true);
+    expect(document.paths['/orders/any'].delete.deprecated).toBe(true);
+  });
+
+  it('warns and skips when no document path matches, rather than mis-annotating', () => {
+    const warn = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    try {
+      @Controller('orders')
+      class OrdersController {
+        @Deprecated({ deprecatedAt: '2026-07-01T00:00:00Z' })
+        @Get()
+        list() {
+          return null;
+        }
+      }
+
+      const document = documentWith('/unrelated');
+      applyDeprecationDocs(document, stubApp([OrdersController]));
+      expect(document.paths['/unrelated'].get.deprecated).toBeUndefined();
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('No OpenAPI path matches'));
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('warns and skips when the path exists but carries a different method', () => {
+    const warn = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    try {
+      @Controller('orders')
+      class OrdersController {
+        @Deprecated({ deprecatedAt: '2026-07-01T00:00:00Z' })
+        @Post()
+        create() {
+          return null;
+        }
+      }
+
+      const document = documentWith('/orders');
+      applyDeprecationDocs(document, stubApp([OrdersController]));
+      expect(document.paths['/orders'].get.deprecated).toBeUndefined();
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('has no operation for'));
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('ignores controllers with no metatype', () => {
+    const app = {
+      get: (token: unknown) => {
+        if (token === DiscoveryService) {
+          return { getControllers: () => [{ metatype: null, name: 'Bodiless' }] };
+        }
+        return { getGlobalPrefix: () => '' };
+      },
+    } as unknown as INestApplication;
+
+    const document = documentWith('/orders');
+    expect(() => applyDeprecationDocs(document, app)).not.toThrow();
+    expect(document.paths['/orders'].get.deprecated).toBeUndefined();
   });
 });

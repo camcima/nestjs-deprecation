@@ -320,6 +320,67 @@ describe('DeprecationInterceptor', () => {
     }
   });
 
+  it('completes the request even when the execution context itself throws', async () => {
+    const interceptor = new DeprecationInterceptor(new Reflector(), {});
+    const context = {
+      getType: () => {
+        throw new Error('context exploded');
+      },
+    } as unknown as ExecutionContext;
+    await expect(firstValueFrom(interceptor.intercept(context, next))).resolves.toBe('ok');
+  });
+
+  it('defaults to an empty configuration when no options are provided', async () => {
+    const interceptor = new DeprecationInterceptor(new Reflector());
+    const { context, headers } = createHarness(OrdersController.prototype.list);
+    await firstValueFrom(interceptor.intercept(context, next));
+    expect(headers.Deprecation).toBe('@1782864000');
+  });
+
+  it('still writes headers when the adapter exposes no usable request object', async () => {
+    const events: DeprecatedCallEvent[] = [];
+    const headers: Record<string, string> = {};
+    const interceptor = new DeprecationInterceptor(new Reflector(), {
+      onDeprecatedCall: (event) => {
+        events.push(event);
+      },
+    });
+    const context = {
+      getType: () => 'http',
+      getHandler: () => OrdersController.prototype.list,
+      getClass: () => OrdersController,
+      switchToHttp: () => ({
+        getResponse: () => ({
+          header: (name: string, value: string) => {
+            headers[name] = value;
+          },
+        }),
+        getRequest: () => undefined,
+      }),
+    } as unknown as ExecutionContext;
+
+    await expect(firstValueFrom(interceptor.intercept(context, next))).resolves.toBe('ok');
+    expect(headers.Deprecation).toBe('@1782864000');
+    expect(events).toHaveLength(0); // the event has no request to describe
+  });
+
+  it('reports UNKNOWN when the request carries no method', async () => {
+    const events: DeprecatedCallEvent[] = [];
+    const { interceptor, context } = createHarness(
+      OrdersController.prototype.list,
+      {
+        onDeprecatedCall: (event) => {
+          events.push(event);
+        },
+      },
+      {},
+      'http',
+      { route: { path: '/orders' } },
+    );
+    await firstValueFrom(interceptor.intercept(context, next));
+    expect(events[0].method).toBe('UNKNOWN');
+  });
+
   it('falls back to "unknown", never the concrete URL, on unrecognised adapters', async () => {
     const events: DeprecatedCallEvent[] = [];
     const { interceptor, context } = createHarness(
