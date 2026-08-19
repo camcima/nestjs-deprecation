@@ -180,7 +180,25 @@ describe('DeprecationInterceptor', () => {
     }
   });
 
-  it('skips when another interceptor instance already wrote the Deprecation header', async () => {
+  it('signals normally when unrelated middleware already set a Deprecation header', async () => {
+    const events: DeprecatedCallEvent[] = [];
+    const { interceptor, context, headers } = createHarness(
+      OrdersController.prototype.list,
+      {
+        onDeprecatedCall: (event) => {
+          events.push(event);
+        },
+      },
+      { Deprecation: '@1000000000' },
+    );
+    await firstValueFrom(interceptor.intercept(context, next));
+    expect(headers.Deprecation).toBe('@1782864000');
+    expect(headers.Sunset).toBe('Fri, 01 Jan 2027 00:00:00 GMT');
+    expect(headers.Link).toBe('</v2/orders>; rel="successor-version"');
+    expect(events).toHaveLength(1);
+  });
+
+  it('skips when a sibling interceptor instance already signalled this request', async () => {
     const events: DeprecatedCallEvent[] = [];
     const options: DeprecationModuleOptions = {
       onDeprecatedCall: (event) => {
