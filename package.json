@@ -38,8 +38,14 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "src"
   ],
+  "sideEffects": false,
+  "homepage": "https://github.com/camcima/nestjs-deprecation#readme",
+  "bugs": {
+    "url": "https://github.com/camcima/nestjs-deprecation/issues"
+  },
   "engines": {
     "node": ">=20"
   },

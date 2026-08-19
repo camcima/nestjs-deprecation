@@ -16,6 +16,9 @@ export default defineConfig({
       reportsDirectory: 'coverage',
       include: ['src/**/*.ts'],
       exclude: ['src/**/index.ts'],
+      // Set just below the current numbers: enough to catch a real regression,
+      // loose enough not to fail on a defensive branch left untested.
+      thresholds: { statements: 90, branches: 87, functions: 92, lines: 92 },
     },
   },
   plugins: [

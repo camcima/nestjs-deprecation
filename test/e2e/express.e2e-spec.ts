@@ -90,8 +90,11 @@ describe('Express e2e', () => {
     }).compile();
     const disabledApp = moduleRef.createNestApplication();
     await disabledApp.init();
-    const res = await request(disabledApp.getHttpServer()).get('/orders').expect(200);
-    expect(res.headers['deprecation']).toBeUndefined();
-    await disabledApp.close();
+    try {
+      const res = await request(disabledApp.getHttpServer()).get('/orders').expect(200);
+      expect(res.headers['deprecation']).toBeUndefined();
+    } finally {
+      await disabledApp.close();
+    }
   });
 });
