@@ -1,9 +1,13 @@
 import 'reflect-metadata';
+import { Injectable, Module } from '@nestjs/common';
 import { APP_INTERCEPTOR } from '@nestjs/core';
 import { Test } from '@nestjs/testing';
 import { DEPRECATION_MODULE_OPTIONS } from '../../src/deprecation.constants';
 import { DeprecationInterceptor } from '../../src/deprecation.interceptor';
-import { DeprecationModuleOptions } from '../../src/deprecation.interfaces';
+import {
+  DeprecationModuleOptions,
+  DeprecationOptionsFactory,
+} from '../../src/deprecation.interfaces';
 import { DeprecationModule } from '../../src/deprecation.module';
 
 describe('DeprecationModule', () => {
@@ -53,6 +57,49 @@ describe('DeprecationModule', () => {
     );
     expect(() => DeprecationModule.forRoot({ enabled: 'yes' } as never)).toThrow(
       /"enabled" must be a boolean/,
+    );
+  });
+
+  it('forRootAsync resolves options from a useClass options factory', async () => {
+    class DeprecationConfig implements DeprecationOptionsFactory {
+      createDeprecationOptions(): DeprecationModuleOptions {
+        return { enabled: false };
+      }
+    }
+    const moduleRef = await Test.createTestingModule({
+      imports: [DeprecationModule.forRootAsync({ useClass: DeprecationConfig })],
+    }).compile();
+    expect(moduleRef.get<DeprecationModuleOptions>(DEPRECATION_MODULE_OPTIONS)).toEqual({
+      enabled: false,
+    });
+  });
+
+  it('forRootAsync resolves options from a useExisting provider', async () => {
+    @Injectable()
+    class DeprecationConfig implements DeprecationOptionsFactory {
+      async createDeprecationOptions(): Promise<DeprecationModuleOptions> {
+        return { enabled: true };
+      }
+    }
+    @Module({ providers: [DeprecationConfig], exports: [DeprecationConfig] })
+    class ConfigModule {}
+
+    const moduleRef = await Test.createTestingModule({
+      imports: [
+        DeprecationModule.forRootAsync({
+          imports: [ConfigModule],
+          useExisting: DeprecationConfig,
+        }),
+      ],
+    }).compile();
+    expect(moduleRef.get<DeprecationModuleOptions>(DEPRECATION_MODULE_OPTIONS)).toEqual({
+      enabled: true,
+    });
+  });
+
+  it('forRootAsync requires one of useFactory, useClass or useExisting', () => {
+    expect(() => DeprecationModule.forRootAsync({})).toThrow(
+      /requires "useFactory", "useClass", or "useExisting"/,
     );
   });
 

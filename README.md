@@ -179,6 +179,23 @@ DeprecationModule.forRootAsync({
 });
 ```
 
+`forRootAsync` also accepts `useClass` or `useExisting`, pointing at a class that implements `DeprecationOptionsFactory`:
+
+```typescript
+import { DeprecationModuleOptions, DeprecationOptionsFactory } from '@camcima/nestjs-deprecation';
+
+@Injectable()
+export class DeprecationConfig implements DeprecationOptionsFactory {
+  constructor(private readonly config: ConfigService) {}
+
+  createDeprecationOptions(): DeprecationModuleOptions {
+    return { enabled: this.config.get<boolean>('DEPRECATION_HEADERS_ENABLED', true) };
+  }
+}
+
+DeprecationModule.forRootAsync({ imports: [ConfigModule], useClass: DeprecationConfig });
+```
+
 `DeprecationModuleOptions` accepts:
 
 | Option             | Type                               | Default | Description                                                                                                                                                                                                                                                            |
@@ -309,7 +326,8 @@ Enforcement behaviors like returning `410 Gone` past sunset, or scheduled browno
 | `DeprecatedCallEvent`           | Interface        | Shape of the event passed to `onDeprecatedCall`                                                   |
 | `DeprecatedCallListener`        | Type             | `` `(event: DeprecatedCallEvent) => void \| Promise<void>` ``                                     |
 | `DeprecationModuleOptions`      | Interface        | Options accepted by `forRoot()`                                                                   |
-| `DeprecationModuleAsyncOptions` | Interface        | Options accepted by `forRootAsync()`                                                              |
+| `DeprecationModuleAsyncOptions` | Interface        | Options accepted by `forRootAsync()` (`useFactory`, `useClass`, or `useExisting`)                 |
+| `DeprecationOptionsFactory`     | Interface        | Implemented by the class given to `forRootAsync({ useClass })` / `({ useExisting })`              |
 | `LinkRelation`                  | Interface        | `{ rel: string; href: string; type?: string }` — one entry in `links`                             |
 | `DEPRECATION_METADATA_KEY`      | Constant         | Reflect metadata key under which `@Deprecated()` stores `DeprecationMetadata`                     |
 | `DEPRECATION_MODULE_OPTIONS`    | Symbol           | DI token for the module options                                                                   |

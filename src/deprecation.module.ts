@@ -1,13 +1,18 @@
-import { DynamicModule, FactoryProvider, Module, Provider } from '@nestjs/common';
+import { DynamicModule, FactoryProvider, Module, Provider, Type } from '@nestjs/common';
 import { APP_INTERCEPTOR } from '@nestjs/core';
 import { DEPRECATION_MODULE_OPTIONS } from './deprecation.constants';
 import { DeprecationInterceptor, validateModuleOptions } from './deprecation.interceptor';
-import { DeprecationModuleOptions } from './deprecation.interfaces';
+import { DeprecationModuleOptions, DeprecationOptionsFactory } from './deprecation.interfaces';
 
 export interface DeprecationModuleAsyncOptions {
   imports?: DynamicModule['imports'];
-  useFactory: (...args: any[]) => DeprecationModuleOptions | Promise<DeprecationModuleOptions>;
+  /** Provide exactly one of useFactory, useClass, or useExisting. */
+  useFactory?: (...args: any[]) => DeprecationModuleOptions | Promise<DeprecationModuleOptions>;
   inject?: FactoryProvider['inject'];
+  /** Class to instantiate and ask for the options. */
+  useClass?: Type<DeprecationOptionsFactory>;
+  /** Already-provided class (e.g. exported by an imported module) to ask for the options. */
+  useExisting?: Type<DeprecationOptionsFactory>;
 }
 
 @Module({})
@@ -33,14 +38,44 @@ export class DeprecationModule {
       module: DeprecationModule,
       imports: asyncOptions.imports ?? [],
       providers: [
-        {
-          provide: DEPRECATION_MODULE_OPTIONS,
-          useFactory: asyncOptions.useFactory,
-          inject: asyncOptions.inject ?? [],
-        },
+        ...createOptionsProviders(asyncOptions),
+        // The kill switch is only known once the factory has run, so unlike
+        // forRoot() the interceptor is always registered and checks at runtime.
         { provide: APP_INTERCEPTOR, useClass: DeprecationInterceptor },
       ],
       exports: [DEPRECATION_MODULE_OPTIONS],
     };
   }
+}
+
+function createOptionsProviders(asyncOptions: DeprecationModuleAsyncOptions): Provider[] {
+  if (asyncOptions.useFactory) {
+    return [
+      {
+        provide: DEPRECATION_MODULE_OPTIONS,
+        useFactory: asyncOptions.useFactory,
+        inject: asyncOptions.inject ?? [],
+      },
+    ];
+  }
+
+  const factoryType = asyncOptions.useExisting ?? asyncOptions.useClass;
+  if (!factoryType) {
+    throw new Error(
+      '[nestjs-deprecation] DeprecationModule.forRootAsync() requires "useFactory", "useClass", or "useExisting".',
+    );
+  }
+
+  const providers: Provider[] = [
+    {
+      provide: DEPRECATION_MODULE_OPTIONS,
+      useFactory: (factory: DeprecationOptionsFactory) => factory.createDeprecationOptions(),
+      inject: [factoryType],
+    },
+  ];
+  // useExisting expects the class to be provided elsewhere; useClass owns it.
+  if (asyncOptions.useClass) {
+    providers.push({ provide: asyncOptions.useClass, useClass: asyncOptions.useClass });
+  }
+  return providers;
 }
