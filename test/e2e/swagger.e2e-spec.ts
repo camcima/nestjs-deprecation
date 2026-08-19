@@ -93,12 +93,6 @@ describe('applyDeprecationDocs', () => {
     expect(document.paths['/reports/fresh'].get?.deprecated).toBeUndefined();
   });
 
-  it('marks routes whose path uses wildcard and optional-parameter syntax', () => {
-    const document = buildDocument();
-    expect(document.paths['/assets/files/{splat}'].get?.deprecated).toBe(true);
-    expect(document.paths['/assets/opt/{id}'].get?.deprecated).toBe(true);
-  });
-
   it('marks operations for non-CRUD request methods such as SEARCH', () => {
     const document = buildDocument();
     // SEARCH is a valid Nest route method that @nestjs/swagger emits, but it

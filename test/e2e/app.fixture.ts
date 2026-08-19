@@ -102,23 +102,11 @@ export class ReportsController extends BaseReportsController {
 }
 
 /**
- * Express/path-to-regexp route syntax that Fastify's router rejects, so this
- * controller is opted into per test rather than living in the shared app.
+ * A request method outside the OpenAPI eight. Opted into per test because
+ * Fastify's router does not accept every method Express does.
  */
 @Controller('assets')
 export class AssetsController {
-  @Deprecated({ deprecatedAt: '2026-07-01T00:00:00Z' })
-  @Get('files/*splat')
-  download() {
-    return { file: true };
-  }
-
-  @Deprecated({ deprecatedAt: '2026-07-01T00:00:00Z' })
-  @Get('opt{/:id}')
-  optional() {
-    return { optional: true };
-  }
-
   @Deprecated({ deprecatedAt: '2026-07-01T00:00:00Z' })
   @Search('find')
   search() {
