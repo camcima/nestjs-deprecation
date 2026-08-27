@@ -3,7 +3,6 @@ allowBuilds:
   '@swc/core': true
   lefthook: true
 
-# pnpm 11 no longer reads "pnpm.overrides" from package.json.
 overrides:
   find-my-way: ^9.7.0
   '@nestjs/swagger>js-yaml': ^5.2.2
