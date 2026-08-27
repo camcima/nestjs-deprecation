@@ -25,6 +25,12 @@ export interface DiscoveredController {
 export interface ApplyDeprecationDocsOptions {
   /** Return false to skip a controller. Default: include all. */
   filter?: (controller: DiscoveredController) => boolean;
+  /**
+   * Emit the `x-sunset` OpenAPI extension on deprecated operations that have a
+   * `sunsetAt`. Read by diff tools (oasdiff) to decide whether removing the
+   * operation is a breaking change. Default: true. Set false to opt out.
+   */
+  xSunset?: boolean;
 }
 
 /**
@@ -47,12 +53,13 @@ interface OperationObjectLike {
   deprecated?: boolean;
   description?: string;
   responses?: Record<string, ResponseObjectLike>;
+  'x-sunset'?: string;
 }
 
 /**
  * Marks every @Deprecated() endpoint as deprecated in the GIVEN OpenAPI
- * document and documents the Deprecation/Sunset/Link headers on each of its
- * responses. Pure per-document transform: it never touches decorator
+ * document, documents the Deprecation/Sunset/Link headers on each of its
+ * responses, and stamps the `x-sunset` extension read by diff tools. Pure per-document transform: it never touches decorator
  * metadata, so multiple documents (e.g. filtered public vs. internal) are
  * fully independent, and applying it twice to the same document is a no-op.
  *
@@ -83,6 +90,7 @@ export function applyDeprecationDocs<TDocument extends DeprecationDocumentLike>(
 
   const scanner = new MetadataScanner();
   const globalPrefix = resolveGlobalPrefix(app);
+  const xSunset = options?.xSunset !== false;
 
   for (const controller of discoveryService.getControllers()) {
     const metatype = controller.metatype;
@@ -120,6 +128,7 @@ export function applyDeprecationDocs<TDocument extends DeprecationDocumentLike>(
             requestMethod,
             metadata,
             `${controller.name ?? metatype.name}.${methodName}`,
+            xSunset,
           );
         }
       }
@@ -183,6 +192,7 @@ function decorateDocumentPath(
   requestMethod: number,
   metadata: DeprecationMetadata,
   where: string,
+  xSunset: boolean,
 ): void {
   const pathItem = findPathItem(document, globalPrefix, openApiPath);
   if (!pathItem) {
@@ -206,7 +216,7 @@ function decorateDocumentPath(
     return;
   }
   for (const methodKey of methodKeys) {
-    decorateOperation(pathItem[methodKey] as OperationObjectLike, metadata);
+    decorateOperation(pathItem[methodKey] as OperationObjectLike, metadata, xSunset);
   }
 }
 
@@ -227,10 +237,20 @@ function findPathItem(
   return matches.length === 1 ? (document.paths[matches[0]] as Record<string, unknown>) : undefined;
 }
 
-function decorateOperation(operation: OperationObjectLike, metadata: DeprecationMetadata): void {
+function decorateOperation(
+  operation: OperationObjectLike,
+  metadata: DeprecationMetadata,
+  xSunset: boolean,
+): void {
   const block = buildDeprecationBlock(metadata);
   if (operation.description?.includes(block)) return; // already applied — keep idempotent
   operation.deprecated = true;
+  // Date-only (RFC 3339 full-date): the form every oasdiff example uses, and
+  // the same slice the description block shows, so the two cannot disagree.
+  // A hand-authored value wins, as with the response headers below.
+  if (xSunset && metadata.sunsetAtIso && operation['x-sunset'] === undefined) {
+    operation['x-sunset'] = metadata.sunsetAtIso.slice(0, 10);
+  }
   operation.description = operation.description ? `${operation.description}\n\n${block}` : block;
 
   const responses = (operation.responses ??= {});

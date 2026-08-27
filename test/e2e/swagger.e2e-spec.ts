@@ -63,6 +63,41 @@ describe('applyDeprecationDocs', () => {
     }
   });
 
+  it('stamps x-sunset as an RFC 3339 full-date on operations that have a sunset', () => {
+    const document = buildDocument();
+    const operation = document.paths['/orders'].get as unknown as Record<string, unknown>;
+    expect(operation['x-sunset']).toBe('2027-01-01');
+    const classLevel = document.paths['/legacy'].get as unknown as Record<string, unknown>;
+    expect(classLevel['x-sunset']).toBe('2027-01-01');
+  });
+
+  it('omits x-sunset when the endpoint is deprecated without a sunset date', () => {
+    const document = buildDocument();
+    const operation = document.paths['/orders/{id}'].get as unknown as Record<string, unknown>;
+    expect(operation.deprecated).toBe(true);
+    expect(operation).not.toHaveProperty('x-sunset');
+  });
+
+  it('omits x-sunset entirely when opted out', () => {
+    const document = buildDocument({ xSunset: false });
+    const operation = document.paths['/orders'].get as unknown as Record<string, unknown>;
+    expect(operation.deprecated).toBe(true);
+    expect(operation).not.toHaveProperty('x-sunset');
+  });
+
+  it('does not clobber an x-sunset the user authored themselves', () => {
+    const document = SwaggerModule.createDocument(
+      app,
+      new DocumentBuilder().setTitle('fixture').build(),
+    );
+    const operation = document.paths['/orders'].get as unknown as Record<string, unknown>;
+    operation['x-sunset'] = '2030-06-30';
+
+    applyDeprecationDocs(document, app);
+
+    expect(operation['x-sunset']).toBe('2030-06-30');
+  });
+
   it('merges with a user-authored @ApiOperation instead of clobbering it', () => {
     const document = buildDocument();
     const operation = document.paths['/orders/documented'].get;

@@ -212,6 +212,7 @@ The `./swagger` subpath is optional and requires `@nestjs/swagger` (already a co
 1. Sets `deprecated: true` on the OpenAPI operation.
 2. Appends a generated Markdown block to the operation description (deprecation date, sunset date, `note`, links) — merged with, not clobbering, any `@ApiOperation()` you already applied.
 3. Documents the `Deprecation` / `Sunset` / `Link` response headers with example values on every response of the operation.
+4. Stamps the `x-sunset` extension on the operation when `sunsetAt` is set, so diff tools can enforce the deprecation window (see [Breaking-change detection](#breaking-change-detection-x-sunset)).
 
 Add `DiscoveryModule` (from `@nestjs/core`) to your application module, create the OpenAPI document, and pass it through `applyDeprecationDocs(document, app)`. The transform mutates and returns the given document instance only — it never touches decorator metadata, so you can build multiple differently-filtered documents in any order and each one is independent.
 
@@ -238,7 +239,7 @@ const document = SwaggerModule.createDocument(app, config);
 SwaggerModule.setup('/api', app, applyDeprecationDocs(document, app));
 ```
 
-`applyDeprecationDocs(document, app, options?)` accepts an optional `filter` callback to skip specific controllers per document:
+`applyDeprecationDocs(document, app, options?)` accepts an optional `filter` callback to skip specific controllers per document (and `xSunset`, below):
 
 ```typescript
 const publicDocument = applyDeprecationDocs(SwaggerModule.createDocument(app, config), app, {
@@ -249,6 +250,27 @@ const publicDocument = applyDeprecationDocs(SwaggerModule.createDocument(app, co
 If `DiscoveryModule` is not imported, `applyDeprecationDocs` throws a clear setup error naming the fix, rather than failing silently.
 
 Routes are matched by recomputing each handler's route path. An application-wide `setGlobalPrefix()` is read from the application and applied exactly, and handlers inherited from a base controller class are documented like any other. Paths using route parameters, named wildcards (`*splat`), or optional-parameter groups (`{/:id}`) are translated to their OpenAPI form, and request methods beyond the OpenAPI eight (such as `SEARCH`) are covered. Handlers whose document path still cannot be resolved (e.g. custom URI versioning, per-route prefixes) fall back to an unambiguous suffix match, and are skipped with a logged warning rather than mis-annotated. One caveat: for documents built with the `include` option, a deprecated route excluded from the document can suffix-match a similarly named route from another module — prefer filtering with the `filter` callback (which skips the controller entirely) over relying on `include` alone.
+
+### Breaking-change detection (`x-sunset`)
+
+Deprecating an operation is not a breaking change; **removing** it is. [oasdiff](https://github.com/oasdiff/oasdiff) — and other tools that diff two OpenAPI documents in CI — resolve that by reading an `x-sunset` extension alongside `deprecated: true`, and treating removal before that date as breaking:
+
+```yaml
+/orders:
+  get:
+    deprecated: true
+    x-sunset: '2027-01-01'
+```
+
+`applyDeprecationDocs` emits it for you from the `sunsetAt` you already passed to `@Deprecated()` — there is nothing extra to declare, and the extension cannot drift from the `Sunset` header or the description block, because all three derive from the same frozen value. The value is an RFC 3339 full-date (`YYYY-MM-DD`), the form oasdiff documents.
+
+It is on by default: `x-sunset` is an inert OpenAPI extension, ignored by tooling that does not recognize it, and nothing about it reaches the wire. Opt out with `xSunset: false`, and note that an `x-sunset` you authored yourself (e.g. via `@ApiExtension()`) is left untouched:
+
+```typescript
+applyDeprecationDocs(document, app, { xSunset: false });
+```
+
+Two caveats. Operations deprecated **without** a `sunsetAt` get no `x-sunset` — which is correct, but under oasdiff's `--deprecation-days-stable` / `--deprecation-days-beta` grace-period enforcement the extension is _mandatory_, so those endpoints will fail that check until you give them a sunset date. And oasdiff currently reads `x-sunset` [only at the operation level](https://github.com/oasdiff/oasdiff/discussions/642); a class-level `@Deprecated()` is fine, since it is stamped onto each of that controller's operations.
 
 `applyDeprecationDocs` is independent of the `enabled` kill switch: it decorates the OpenAPI document at build time regardless of the runtime `enabled` setting, so if you disable the interceptor at runtime, stop calling `applyDeprecationDocs` too, to keep docs and runtime behavior in sync.
 
