@@ -50,6 +50,7 @@
   "engines": {
     "node": ">=20"
   },
+  "packageManager": "pnpm@10.34.5",
   "scripts": {
     "build": "rm -rf dist tsconfig.build.tsbuildinfo && tsc -p tsconfig.build.json",
     "lint": "eslint \"{src,test}/**/*.ts\"",
@@ -110,12 +111,5 @@
     "typescript-eslint": "^8.65.0",
     "unplugin-swc": "^1.5.9",
     "vitest": "^4.1.9"
-  },
-  "pnpm": {
-    "overrides": {
-      "find-my-way": "^9.7.0",
-      "@nestjs/swagger>js-yaml": "^5.2.2",
-      "postcss>nanoid": "^3.3.18"
-    }
   }
 }
