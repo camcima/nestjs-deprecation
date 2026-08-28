@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.1.0](https://github.com/camcima/nestjs-deprecation/compare/v1.0.0...v1.1.0) (2026-08-28)
+
+### Features
+
+* **swagger:** emit x-sunset extension for breaking-change detection ([#6](https://github.com/camcima/nestjs-deprecation/issues/6)) ([a5a461a](https://github.com/camcima/nestjs-deprecation/commit/a5a461a0da1c73eb7cd554e710311d6aa0e5c0f2))
+
 ## [1.0.0](https://github.com/camcima/nestjs-deprecation/compare/v0.2.0...v1.0.0) (2026-08-19)
 
 ### Bug Fixes
