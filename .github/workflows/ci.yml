@@ -15,6 +15,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      # Every action-setup step here resolves pnpm from "packageManager" in
+      # package.json. That pin has to stay on pnpm 10 while engines.node allows
+      # 20: pnpm 11 requires Node >=22.13 and crashes on 20 loading node:sqlite.
       - uses: pnpm/action-setup@0e279bb959325dab635dd2c09392533439d90093 # v6
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
@@ -27,6 +30,9 @@ jobs:
   test:
     runs-on: ubuntu-latest
     strategy:
+      # A break on one Node version says nothing about the others, and finding
+      # out which ones are affected is the point of the matrix.
+      fail-fast: false
       matrix:
         node-version: [20, 22, 24]
     steps:

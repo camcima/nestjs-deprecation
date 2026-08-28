@@ -50,7 +50,7 @@
   "engines": {
     "node": ">=20"
   },
-  "packageManager": "pnpm@11.18.0",
+  "packageManager": "pnpm@10.34.5",
   "scripts": {
     "build": "rm -rf dist tsconfig.build.tsbuildinfo && tsc -p tsconfig.build.json",
     "lint": "eslint \"{src,test}/**/*.ts\"",
