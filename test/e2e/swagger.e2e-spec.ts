@@ -29,6 +29,21 @@ describe('applyDeprecationDocs', () => {
     return applyDeprecationDocs(document, app, options);
   }
 
+  /**
+   * The example of the documented `Sunset` response header, or undefined when
+   * the operation does not document one. Asserts every response agrees: the
+   * header is described on all of them or on none, never a subset.
+   */
+  function sunsetHeaderExample(operation: unknown): string | undefined {
+    const { responses } = operation as {
+      responses: Record<string, { headers?: Record<string, { schema: { example: string } }> }>;
+    };
+    const examples = Object.values(responses).map((r) => r.headers?.Sunset?.schema.example);
+    expect(examples.length).toBeGreaterThan(0);
+    expect(new Set(examples).size).toBe(1);
+    return examples[0];
+  }
+
   it('marks deprecated operations and leaves fresh ones untouched', () => {
     const document = buildDocument();
     expect(document.paths['/orders'].get?.deprecated).toBe(true);
@@ -63,26 +78,35 @@ describe('applyDeprecationDocs', () => {
     }
   });
 
-  it('stamps x-sunset as an RFC 3339 full-date on operations that have a sunset', () => {
+  it('stamps x-sunset and documents the Sunset header together', () => {
     const document = buildDocument();
     const operation = document.paths['/orders'].get as unknown as Record<string, unknown>;
+    // The extension and the response header are two views of one sunset date:
+    // the RFC 3339 full-date diff tools read, and the RFC 8594 HTTP-date
+    // clients receive. When there is a sunset, both are present.
     expect(operation['x-sunset']).toBe('2027-01-01');
+    expect(sunsetHeaderExample(operation)).toBe('Fri, 01 Jan 2027 00:00:00 GMT');
     const classLevel = document.paths['/legacy'].get as unknown as Record<string, unknown>;
     expect(classLevel['x-sunset']).toBe('2027-01-01');
+    expect(sunsetHeaderExample(classLevel)).toBe('Fri, 01 Jan 2027 00:00:00 GMT');
   });
 
-  it('omits x-sunset when the endpoint is deprecated without a sunset date', () => {
+  it('omits both x-sunset and the Sunset header when there is no sunset date', () => {
     const document = buildDocument();
     const operation = document.paths['/orders/{id}'].get as unknown as Record<string, unknown>;
     expect(operation.deprecated).toBe(true);
     expect(operation).not.toHaveProperty('x-sunset');
+    expect(sunsetHeaderExample(operation)).toBeUndefined();
   });
 
-  it('omits x-sunset entirely when opted out', () => {
+  it('still documents the Sunset header when x-sunset is opted out', () => {
     const document = buildDocument({ xSunset: false });
     const operation = document.paths['/orders'].get as unknown as Record<string, unknown>;
     expect(operation.deprecated).toBe(true);
+    // xSunset only suppresses the extension. The endpoint still sends the
+    // Sunset header at runtime, so the document must keep describing it.
     expect(operation).not.toHaveProperty('x-sunset');
+    expect(sunsetHeaderExample(operation)).toBe('Fri, 01 Jan 2027 00:00:00 GMT');
   });
 
   it('does not clobber an x-sunset the user authored themselves', () => {
@@ -96,6 +120,10 @@ describe('applyDeprecationDocs', () => {
     applyDeprecationDocs(document, app);
 
     expect(operation['x-sunset']).toBe('2030-06-30');
+    // The header example keeps describing what the endpoint actually sends,
+    // which is the decorator's date — a hand-authored extension overrides only
+    // the extension, so the two can legitimately disagree here.
+    expect(sunsetHeaderExample(operation)).toBe('Fri, 01 Jan 2027 00:00:00 GMT');
   });
 
   it('merges with a user-authored @ApiOperation instead of clobbering it', () => {
