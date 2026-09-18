@@ -98,13 +98,22 @@ pnpm add @camcima/nestjs-deprecation
 
 ### Peer dependencies
 
-| Package              | Version                           | Required                                   |
-| -------------------- | --------------------------------- | ------------------------------------------ |
-| `@nestjs/common`     | `^10.0.0 \|\| ^11.0.0`            | Yes                                        |
-| `@nestjs/core`       | `^10.0.0 \|\| ^11.0.0`            | Yes                                        |
-| `reflect-metadata`   | `^0.1.13 \|\| ^0.2.0`             | Yes                                        |
-| `@nestjs/swagger`    | `^7.0.0 \|\| ^8.0.0 \|\| ^11.0.0` | No (optional, for the `./swagger` subpath) |
-| `@opentelemetry/api` | `>=1.8.0`                         | No (optional, for the `./otel` subpath)    |
+| Package              | Version                                        | Required                                   |
+| -------------------- | ---------------------------------------------- | ------------------------------------------ |
+| `@nestjs/common`     | `^10.0.0 \|\| ^11.0.0 \|\| ^12.0.0`            | Yes                                        |
+| `@nestjs/core`       | `^10.0.0 \|\| ^11.0.0 \|\| ^12.0.0`            | Yes                                        |
+| `reflect-metadata`   | `^0.1.13 \|\| ^0.2.0`                          | Yes                                        |
+| `@nestjs/swagger`    | `^7.0.0 \|\| ^8.0.0 \|\| ^11.0.0 \|\| ^12.0.0` | No (optional, for the `./swagger` subpath) |
+| `@opentelemetry/api` | `>=1.8.0`                                      | No (optional, for the `./otel` subpath)    |
+
+### NestJS 12
+
+NestJS 12 ships its packages as ESM only. This library stays CommonJS, so a single build supports NestJS 10, 11 and 12, and it works unchanged in both CommonJS and ESM applications. It adds no requirements beyond those of NestJS 12 itself:
+
+- **Node.js 20.19+ or 22.12+.** CommonJS code, this library included, loads NestJS 12 through `require(esm)`, which Node.js enables by default only from those releases.
+- **AWS Lambda:** set `NODE_OPTIONS=--experimental-require-module`, because Lambda's Node.js runtimes disable `require(esm)` by default.
+
+See the [NestJS 11 → 12 migration guide](https://docs.nestjs.com/migration-guide) for details.
 
 ## Quick Start
 

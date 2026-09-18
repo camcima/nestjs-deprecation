@@ -7,10 +7,10 @@
 # and CommonJS/ESM interop: this package is CommonJS while Nest 12 is
 # ESM-only, a path the src-importing Vitest suite never exercises.
 #
-# NEST_MAJOR selects the Nest line to install (default: 11).
+# NEST_MAJOR selects the Nest line to install (default: 12, the dev baseline).
 set -euo pipefail
 
-nest_major=${NEST_MAJOR:-11}
+nest_major=${NEST_MAJOR:-12}
 case "$nest_major" in
   10) swagger_range='^8.0.0' ;;
   11) swagger_range='^11.0.0' ;;
