@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.2.0](https://github.com/camcima/nestjs-deprecation/compare/v1.1.0...v1.2.0) (2026-09-18)
+
+### Features
+
+* support NestJS 12 ([#7](https://github.com/camcima/nestjs-deprecation/issues/7)) ([9306247](https://github.com/camcima/nestjs-deprecation/commit/93062477d08cd803feb1c790850a5533bf49f565))
+
 ## [1.1.0](https://github.com/camcima/nestjs-deprecation/compare/v1.0.0...v1.1.0) (2026-08-28)
 
 ### Features
