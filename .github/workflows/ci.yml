@@ -70,6 +70,37 @@ jobs:
       - run: pnpm run build
       - run: pnpm run test:pack
 
+  # The build job above smoke-tests the tarball against the default Nest line
+  # (NEST_MAJOR in scripts/pack-smoke.sh). It stays a single job because
+  # "build" is a required status check; the other lines are covered here.
+  pack-compat:
+    name: Pack smoke (nest ${{ matrix.nest }} / node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - nest: 10
+            node: 22
+          - nest: 11
+            node: 22
+          # Nest 12's documented floor: the first 20.x release that lets
+          # CommonJS code (this library's dist included) require() Nest's
+          # ESM-only packages without a flag.
+          - nest: 12
+            node: '20.19.0'
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: pnpm/action-setup@0e279bb959325dab635dd2c09392533439d90093 # v6
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+        with:
+          node-version: ${{ matrix.node }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run test:pack
+        env:
+          NEST_MAJOR: ${{ matrix.nest }}
+
   peer-compat:
     name: Peer floors (nest ${{ matrix.nest }} / swagger ${{ matrix.swagger }})
     runs-on: ubuntu-latest
@@ -81,6 +112,11 @@ jobs:
             swagger: '7.0.0'
           - nest: '10.0.0'
             swagger: '8.0.0'
+          # @nestjs/swagger 11.0.0 declares a peer on @nestjs/common ^11.0.1.
+          - nest: '11.0.1'
+            swagger: '11.0.0'
+          - nest: '12.0.0'
+            swagger: '12.0.0'
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: pnpm/action-setup@0e279bb959325dab635dd2c09392533439d90093 # v6
