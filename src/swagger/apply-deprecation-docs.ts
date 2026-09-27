@@ -1,6 +1,24 @@
-import { INestApplication, Logger, RequestMethod, Type } from '@nestjs/common';
-import { METHOD_METADATA, PATH_METADATA } from '@nestjs/common/constants';
-import { ApplicationConfig, DiscoveryService, MetadataScanner } from '@nestjs/core';
+import {
+  INestApplication,
+  Logger,
+  RequestMethod,
+  Type,
+  VERSION_NEUTRAL,
+  VersioningOptions,
+  VersioningType,
+} from '@nestjs/common';
+import {
+  METHOD_METADATA,
+  MODULE_PATH,
+  PATH_METADATA,
+  VERSION_METADATA,
+} from '@nestjs/common/constants';
+import {
+  ApplicationConfig,
+  DiscoveryService,
+  MetadataScanner,
+  ModulesContainer,
+} from '@nestjs/core';
 import { DEPRECATION_METADATA_KEY } from '../deprecation.constants';
 import { DeprecationMetadata } from '../deprecation.interfaces';
 
@@ -20,6 +38,9 @@ export interface DiscoveredController {
   // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type -- supertype of Nest's InstanceWrapper['metatype']
   metatype?: Type<unknown> | Function | null;
   name?: string;
+  /** The declaring module, whose RouterModule path prefixes the controller's routes. */
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type -- supertype of Nest's Module['metatype']
+  host?: { metatype?: Type<unknown> | Function | null } | null;
 }
 
 export interface ApplyDeprecationDocsOptions {
@@ -69,9 +90,10 @@ interface OperationObjectLike {
  * ```
  *
  * Requires DiscoveryModule from @nestjs/core in your application module.
- * Routes are matched by recomputing the Nest route path; a global prefix is
- * tolerated via unique suffix match. Unmatchable handlers (e.g. custom URI
- * versioning) are skipped with a warning.
+ * Routes are matched by recomputing the Nest route path the way Nest's router
+ * does: global prefix, URI version, RouterModule path, controller path,
+ * handler path. Anything else (e.g. custom versioning) falls back to a unique
+ * suffix match, and unmatchable handlers are skipped with a warning.
  */
 export function applyDeprecationDocs<TDocument extends DeprecationDocumentLike>(
   document: TDocument,
@@ -89,7 +111,8 @@ export function applyDeprecationDocs<TDocument extends DeprecationDocumentLike>(
   }
 
   const scanner = new MetadataScanner();
-  const globalPrefix = resolveGlobalPrefix(app);
+  const { globalPrefix, uriVersioning } = resolveRouting(app);
+  const applicationId = resolveApplicationId(app);
   const xSunset = options?.xSunset !== false;
 
   for (const controller of discoveryService.getControllers()) {
@@ -102,6 +125,10 @@ export function applyDeprecationDocs<TDocument extends DeprecationDocumentLike>(
       metatype,
     );
     const controllerPaths = toPathArray(Reflect.getMetadata(PATH_METADATA, metatype));
+    const modulePath = resolveModulePath(controller, applicationId);
+    const controllerVersion: unknown = uriVersioning
+      ? (Reflect.getMetadata(VERSION_METADATA, metatype) ?? uriVersioning.defaultVersion)
+      : undefined;
     const prototype: object | undefined = metatype.prototype;
     if (!prototype) continue;
 
@@ -119,17 +146,27 @@ export function applyDeprecationDocs<TDocument extends DeprecationDocumentLike>(
       if (!metadata) continue;
 
       const methodPaths = toPathArray(Reflect.getMetadata(PATH_METADATA, handler));
-      for (const controllerPath of controllerPaths) {
-        for (const methodPath of methodPaths) {
-          decorateDocumentPath(
-            document,
-            globalPrefix,
-            toOpenApiPath(controllerPath, methodPath),
-            requestMethod,
-            metadata,
-            `${controller.name ?? metatype.name}.${methodName}`,
-            xSunset,
-          );
+      // Without these segments a versioned route resolves to the unversioned
+      // path, which is an exact match for a different, version-neutral route.
+      const versionSegments = uriVersioning
+        ? toVersionSegments(
+            Reflect.getMetadata(VERSION_METADATA, handler) ?? controllerVersion,
+            uriVersioning.prefix,
+          )
+        : [''];
+      for (const versionSegment of versionSegments) {
+        for (const controllerPath of controllerPaths) {
+          for (const methodPath of methodPaths) {
+            decorateDocumentPath(
+              document,
+              globalPrefix,
+              toOpenApiPath(`${versionSegment}/${modulePath}/${controllerPath}`, methodPath),
+              requestMethod,
+              metadata,
+              `${controller.name ?? metatype.name}.${methodName}`,
+              xSunset,
+            );
+          }
         }
       }
     }
@@ -150,20 +187,71 @@ function findHandler(prototype: object, name: string): object | undefined {
   return undefined;
 }
 
+interface UriVersioning {
+  prefix: string;
+  defaultVersion: unknown;
+}
+
 /**
- * The document paths include an application-wide prefix that route metadata
- * knows nothing about. Reading it from the app makes prefixed lookups exact,
- * instead of guessing by suffix and losing to any path that shares one.
+ * The document paths include an application-wide prefix and URI version
+ * segments that route metadata knows nothing about. Reading them from the app
+ * makes lookups exact, instead of guessing by suffix and losing to any path
+ * that shares one.
  */
-function resolveGlobalPrefix(app: INestApplication): string {
+function resolveRouting(app: INestApplication): {
+  globalPrefix: string;
+  uriVersioning?: UriVersioning;
+} {
+  let config: ApplicationConfig;
   try {
-    const prefix = app.get(ApplicationConfig, { strict: false }).getGlobalPrefix();
-    if (!prefix) return '';
-    const normalized = prefix.replace(/\/+$/, '');
-    return normalized.startsWith('/') ? normalized : `/${normalized}`;
+    config = app.get(ApplicationConfig, { strict: false });
   } catch {
-    return ''; // older/mocked apps: fall back to suffix matching alone
+    return { globalPrefix: '' }; // older/mocked apps: fall back to suffix matching alone
   }
+  const prefix = config.getGlobalPrefix();
+  const normalized = prefix ? prefix.replace(/\/+$/, '') : '';
+  const globalPrefix = !normalized || normalized.startsWith('/') ? normalized : `/${normalized}`;
+  // Optional call: test doubles and older configs may not implement it.
+  const versioning: VersioningOptions | undefined = config.getVersioning?.();
+  if (versioning?.type !== VersioningType.URI) return { globalPrefix };
+  return {
+    globalPrefix,
+    uriVersioning: {
+      // Mirrors Nest's RoutePathFactory: "v" unless overridden, "" when false.
+      prefix: versioning.prefix === false ? '' : (versioning.prefix ?? 'v'),
+      defaultVersion: versioning.defaultVersion,
+    },
+  };
+}
+
+/** RouterModule stores module paths under a per-application metadata key. */
+function resolveApplicationId(app: INestApplication): string | undefined {
+  try {
+    return app.get(ModulesContainer, { strict: false }).applicationId;
+  } catch {
+    return undefined;
+  }
+}
+
+function resolveModulePath(
+  controller: DiscoveredController,
+  applicationId: string | undefined,
+): string {
+  const moduleType = controller.host?.metatype;
+  if (!moduleType) return '';
+  const path: unknown =
+    (applicationId === undefined
+      ? undefined
+      : Reflect.getMetadata(MODULE_PATH + applicationId, moduleType)) ??
+    Reflect.getMetadata(MODULE_PATH, moduleType);
+  return typeof path === 'string' ? path : '';
+}
+
+/** A route's URI version segments; "" is the unversioned (neutral) path. */
+function toVersionSegments(version: unknown, prefix: string): string[] {
+  if (version === undefined) return [''];
+  const versions: unknown[] = Array.isArray(version) ? version : [version];
+  return versions.map((v) => (v === VERSION_NEUTRAL ? '' : `${prefix}${String(v)}`));
 }
 
 function toPathArray(path: string | string[] | undefined): string[] {
@@ -197,7 +285,7 @@ function decorateDocumentPath(
   const pathItem = findPathItem(document, globalPrefix, openApiPath);
   if (!pathItem) {
     logger.warn(
-      `No OpenAPI path matches "${openApiPath}" for ${where}; skipping. Custom prefixes or URI versioning may not be resolvable.`,
+      `No OpenAPI path matches "${openApiPath}" for ${where}; skipping. Custom versioning or per-route prefixes may not be resolvable.`,
     );
     return;
   }
@@ -231,8 +319,8 @@ function findPathItem(
     if (exact) return exact as Record<string, unknown>;
   }
   if (openApiPath === '/') return undefined;
-  // Last resort for prefixes the app does not report (versioning, per-route
-  // prefixes): accept a suffix match only when it is unambiguous.
+  // Last resort for prefixes the app does not report (custom versioning,
+  // per-route prefixes): accept a suffix match only when it is unambiguous.
   const matches = Object.keys(document.paths).filter((path) => path.endsWith(openApiPath));
   return matches.length === 1 ? (document.paths[matches[0]] as Record<string, unknown>) : undefined;
 }
