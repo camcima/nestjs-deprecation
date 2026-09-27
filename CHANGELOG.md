@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.1](https://github.com/camcima/nestjs-deprecation/compare/v1.2.0...v1.2.1) (2026-09-27)
+
+### Bug Fixes
+
+* reject non-ASCII link values and non-ISO dates at decoration time ([#8](https://github.com/camcima/nestjs-deprecation/issues/8)) ([82f222d](https://github.com/camcima/nestjs-deprecation/commit/82f222d1fc466f9f1d65404ef59d93f5563b17d0))
+* **swagger:** resolve URI-versioned and RouterModule paths exactly ([#9](https://github.com/camcima/nestjs-deprecation/issues/9)) ([41a1ac9](https://github.com/camcima/nestjs-deprecation/commit/41a1ac9dc42be71915e6de92134bd3c820793b0a))
+
 ## [1.2.0](https://github.com/camcima/nestjs-deprecation/compare/v1.1.0...v1.2.0) (2026-09-18)
 
 ### Features
