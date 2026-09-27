@@ -53,7 +53,7 @@ describe('buildDeprecationMetadata', () => {
   });
 
   it.each([
-    [{ deprecatedAt: 'not-a-date' }, /"deprecatedAt".*not a valid date/],
+    [{ deprecatedAt: 'not-a-date' }, /"deprecatedAt" must be an ISO 8601 date/],
     [{ deprecatedAt: '1969-12-31T00:00:00Z' }, /"deprecatedAt".*before 1970-01-01/],
     [
       { deprecatedAt: '2027-01-01T00:00:00Z', sunsetAt: '2026-07-01T00:00:00Z' },
@@ -103,7 +103,37 @@ describe('buildDeprecationMetadata', () => {
     ],
     [
       { deprecatedAt: '2026-07-01T00:00:00Z', links: [{ rel: 'alt\\ernate', href: '/v2' }] },
-      /"links\[0\]\.rel" must not contain control characters, double quotes, or backslashes/,
+      /"links\[0\]\.rel" must not contain control characters, non-ASCII characters, double quotes, or backslashes/,
+    ],
+    // Node rejects header values with characters above U+00FF, and Fastify
+    // only checks at send time — a 500 the interceptor cannot contain. Latin-1
+    // passes Node but is mis-encoded by Fastify. URI-references are ASCII.
+    [
+      { deprecatedAt: '2026-07-01T00:00:00Z', link: '/docs/迁移' },
+      /"link" must not contain.*non-ASCII/,
+    ],
+    [
+      { deprecatedAt: '2026-07-01T00:00:00Z', link: '/docs/café' },
+      /"link" must not contain.*non-ASCII/,
+    ],
+    [
+      { deprecatedAt: '2026-07-01T00:00:00Z', successor: '/v2/a\x7fb' },
+      /"successor" must not contain.*control characters/,
+    ],
+    [
+      { deprecatedAt: '2026-07-01T00:00:00Z', links: [{ rel: 'alternate', href: '/v2/ü' }] },
+      /"links\[0\]\.href" must not contain.*non-ASCII/,
+    ],
+    [
+      { deprecatedAt: '2026-07-01T00:00:00Z', links: [{ rel: 'versión', href: '/v2' }] },
+      /"links\[0\]\.rel" must not contain.*non-ASCII/,
+    ],
+    [
+      {
+        deprecatedAt: '2026-07-01T00:00:00Z',
+        links: [{ rel: 'alternate', href: '/v2', type: 'text/\x7f' }],
+      },
+      /"links\[0\]\.type" must not contain control characters/,
     ],
     [{ deprecatedAt: '2026-07-01T00:00:00Z', note: 42 }, /"note" must be a string/],
     [{ deprecatedAt: '2026-07-01T00:00:00Z', links: 'nope' }, /"links" must be an array/],
@@ -126,6 +156,18 @@ describe('buildDeprecationMetadata', () => {
       { deprecatedAt: '2026-07-01T00:00:00Z', sunsetAt: '2027-01-01T12:30' },
       /"sunsetAt" must include a timezone designator/,
     ],
+    // Lowercase "t" and a space separator are still offset-less local times.
+    [{ deprecatedAt: '2026-07-01t00:00:00' }, /"deprecatedAt" must include a timezone designator/],
+    [{ deprecatedAt: '2026-07-01 00:00:00' }, /"deprecatedAt" must be an ISO 8601 date/],
+    [{ deprecatedAt: 'July 1, 2026' }, /"deprecatedAt" must be an ISO 8601 date/],
+    [{ deprecatedAt: 'Wed, 01 Jul 2026 00:00:00 GMT' }, /"deprecatedAt" must be an ISO 8601 date/],
+    // Date() rolls impossible days over (Feb 30 -> Mar 2) instead of failing.
+    [{ deprecatedAt: '2026-02-30' }, /"deprecatedAt" is not a valid date: 2026-02-30/],
+    [
+      { deprecatedAt: '2026-07-01T00:00:00Z', sunsetAt: '2027-04-31T00:00:00Z' },
+      /"sunsetAt" is not a valid date/,
+    ],
+    [{ deprecatedAt: '2026-00-10' }, /"deprecatedAt" is not a valid date/],
     [
       { deprecatedAt: '2026-07-01T00:00:00Z', link: '//evil.example/docs' },
       /"link".*protocol-relative/,
@@ -173,6 +215,29 @@ describe('buildDeprecationMetadata', () => {
   it('accepts an explicit UTC offset', () => {
     const metadata = buildDeprecationMetadata({ deprecatedAt: '2026-07-01T02:00:00+02:00' }, WHERE);
     expect(metadata.deprecatedAtIso).toBe('2026-07-01T00:00:00.000Z');
+  });
+
+  it('accepts RFC 3339 lowercase separators when an offset is present', () => {
+    const metadata = buildDeprecationMetadata({ deprecatedAt: '2026-07-01t02:00:00+0200' }, WHERE);
+    expect(metadata.deprecatedAtIso).toBe('2026-07-01T00:00:00.000Z');
+  });
+
+  it('accepts leap days in leap years', () => {
+    const metadata = buildDeprecationMetadata({ deprecatedAt: '2028-02-29' }, WHERE);
+    expect(metadata.deprecatedAtIso).toBe('2028-02-29T00:00:00.000Z');
+  });
+
+  it('accepts printable ASCII rel and type values containing spaces', () => {
+    const metadata = buildDeprecationMetadata(
+      {
+        deprecatedAt: '2026-07-01T00:00:00Z',
+        links: [{ rel: 'alternate', href: '/v2?q=a%20b', type: 'text/html; charset=utf-8' }],
+      },
+      WHERE,
+    );
+    expect(metadata.linkHeader).toBe(
+      '</v2?q=a%20b>; rel="alternate"; type="text/html; charset=utf-8"',
+    );
   });
 
   it('accepts a lone "deprecation" relation supplied through links', () => {

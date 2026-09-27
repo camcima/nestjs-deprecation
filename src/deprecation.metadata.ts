@@ -105,8 +105,14 @@ function assertSingletonRel(
   );
 }
 
-/** A trailing "Z"/"z" or a "+hh:mm"/"-hhmm" style UTC offset. */
-const TIMEZONE_DESIGNATOR = /(?:[Zz]|[+-]\d{2}:?\d{2})$/;
+/**
+ * The accepted string grammar: an RFC 3339 full-date, optionally followed by a
+ * time and a UTC offset ("Z"/"z", "+hh:mm" or "+hhmm"). Anything else is left
+ * to Date's implementation-defined fallback parser, which reads most forms in
+ * the server's local timezone, so it is rejected instead.
+ */
+const ISO_DATE =
+  /^(\d{4})-(\d{2})-(\d{2})(?:[Tt]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?([Zz]|[+-]\d{2}:?\d{2})?)?$/;
 
 function parseDateOption(value: unknown, option: string, where: string): Date {
   if (!(value instanceof Date) && typeof value !== 'string') {
@@ -120,14 +126,7 @@ function parseDateOption(value: unknown, option: string, where: string): Date {
       }.${hint}`,
     );
   }
-  // A date-time without an offset is parsed in the server's local timezone, so
-  // the emitted header would depend on where the app runs. Date-only strings
-  // are unambiguous (UTC) and stay allowed.
-  if (typeof value === 'string' && value.includes('T') && !TIMEZONE_DESIGNATOR.test(value)) {
-    throw new Error(
-      `[nestjs-deprecation] ${where}: "${option}" must include a timezone designator ("Z" or an offset such as "+02:00"), got: ${value}. Without one the value is interpreted in the server's local timezone.`,
-    );
-  }
+  if (typeof value === 'string') assertIsoDateString(value, option, where);
   const date = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(date.getTime())) {
     throw new Error(
@@ -143,6 +142,30 @@ function parseDateOption(value: unknown, option: string, where: string): Date {
   // second-granular. Truncate once here so every derived value — headers,
   // ISO strings, sunsetEpochMs, isPastSunset — agrees exactly.
   return new Date(Math.trunc(date.getTime() / 1000) * 1000);
+}
+
+function assertIsoDateString(value: string, option: string, where: string): void {
+  const match = ISO_DATE.exec(value);
+  if (!match) {
+    throw new Error(
+      `[nestjs-deprecation] ${where}: "${option}" must be an ISO 8601 date (2026-07-01) or date-time with a timezone designator (2026-07-01T00:00:00Z), got: ${value}`,
+    );
+  }
+  // A date-time without an offset is parsed in the server's local timezone, so
+  // the emitted header would depend on where the app runs. Date-only strings
+  // are unambiguous (UTC) and stay allowed.
+  if (value.length > 10 && match[4] === undefined) {
+    throw new Error(
+      `[nestjs-deprecation] ${where}: "${option}" must include a timezone designator ("Z" or an offset such as "+02:00"), got: ${value}. Without one the value is interpreted in the server's local timezone.`,
+    );
+  }
+  // Date() rolls impossible days over (2026-02-30 becomes March 2) rather
+  // than failing, so check the calendar date as written.
+  const [year, month, day] = [Number(match[1]), Number(match[2]), Number(match[3])];
+  const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  if (month < 1 || month > 12 || day < 1 || day > daysInMonth) {
+    throw new Error(`[nestjs-deprecation] ${where}: "${option}" is not a valid date: ${value}`);
+  }
 }
 
 function assertHref(href: unknown, option: string, where: string): string {
@@ -169,10 +192,13 @@ function assertHref(href: unknown, option: string, where: string): string {
     }
   }
   // RFC 8288 wraps the target in <...>, where whitespace, control characters
-  // and < > " \ cannot appear raw in a URI-reference. Require pre-encoded input.
-  if (/[\x00-\x20<>"\\]/.test(href)) {
+  // and < > " \ cannot appear raw in a URI-reference, and a URI-reference is
+  // ASCII by definition. Non-ASCII would also fail at send time: Node rejects
+  // it (a 500 under Fastify, which validates after the interceptor has run)
+  // or mis-encodes Latin-1. Require pre-encoded input.
+  if (/[^\x21-\x7E]|[<>"\\]/.test(href)) {
     throw new Error(
-      `[nestjs-deprecation] ${where}: "${option}" must not contain whitespace, control characters, or any of < > " \\ — percent-encode reserved characters instead`,
+      `[nestjs-deprecation] ${where}: "${option}" must not contain whitespace, control characters, non-ASCII characters, or any of < > " \\ — percent-encode them instead`,
     );
   }
   return href;
@@ -180,7 +206,9 @@ function assertHref(href: unknown, option: string, where: string): string {
 
 /**
  * rel/type are emitted inside HTTP quoted-strings, where control characters,
- * double quotes and backslashes cannot appear raw (RFC 9110 §5.6.4).
+ * double quotes and backslashes cannot appear raw (RFC 9110 §5.6.4). The
+ * obs-text range that grammar still tolerates is rejected too: Node refuses
+ * most of it and Fastify mis-encodes the rest.
  */
 function assertQuotedParamSafe(value: unknown, option: string, where: string): void {
   if (typeof value !== 'string') {
@@ -188,9 +216,9 @@ function assertQuotedParamSafe(value: unknown, option: string, where: string): v
       `[nestjs-deprecation] ${where}: "${option}" must be a string, got: ${typeof value}`,
     );
   }
-  if (/[\x00-\x1F"\\]/.test(value)) {
+  if (/[^\x20-\x7E]|["\\]/.test(value)) {
     throw new Error(
-      `[nestjs-deprecation] ${where}: "${option}" must not contain control characters, double quotes, or backslashes`,
+      `[nestjs-deprecation] ${where}: "${option}" must not contain control characters, non-ASCII characters, double quotes, or backslashes`,
     );
   }
 }
