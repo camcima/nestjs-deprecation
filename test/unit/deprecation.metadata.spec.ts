@@ -206,6 +206,14 @@ describe('buildDeprecationMetadata', () => {
     expect(() => buildDeprecationMetadata(options as never, WHERE)).toThrow(message);
   });
 
+  it.each(['deprecatedAt', 'sunsetAt'])('rejects an Invalid Date object for %s', (option) => {
+    // A Date skips the ISO string check, so its time value is what has to be validated.
+    const options = { deprecatedAt: '2026-07-01T00:00:00Z', [option]: new Date('not a date') };
+    expect(() => buildDeprecationMetadata(options as never, WHERE)).toThrow(
+      `"${option}" is not a valid date: Invalid Date`,
+    );
+  });
+
   it('accepts date-only strings as UTC midnight', () => {
     const metadata = buildDeprecationMetadata({ deprecatedAt: '2026-07-01' }, WHERE);
     expect(metadata.deprecationHeader).toBe('@1782864000');

@@ -3,3 +3,12 @@
 [[PackageOverrides]]
 group = "dev"
 ignore = true
+
+# basic-ftp 5.3.1 (dev-only): release-it -> proxy-agent 8.0.2 -> pac-proxy-agent
+# 9.1.0 -> get-uri 8.0.1 (pinned exactly), which requires basic-ftp ^5.3.1. The
+# fix exists only in basic-ftp 6.x, so an override would cross a major under a
+# package that has not been tested with it. Revisit once get-uri accepts 6.x.
+[[IgnoredVulns]]
+id = "GHSA-c475-qrg2-pj4r"
+ignoreUntil = 2027-01-31
+reason = "Dev-only: release-it -> proxy-agent -> pac-proxy-agent -> get-uri 8.0.1 requires basic-ftp ^5.3.1; the fix exists only in basic-ftp 6.x"
