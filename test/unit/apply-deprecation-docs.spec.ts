@@ -1,5 +1,6 @@
 import 'reflect-metadata';
 import { All, Controller, Get, INestApplication, Logger, Post } from '@nestjs/common';
+import { MODULE_PATH } from '@nestjs/common/constants';
 import { ApplicationConfig, DiscoveryService } from '@nestjs/core';
 import { Deprecated } from '../../src/deprecated.decorator';
 import { applyDeprecationDocs } from '../../src/swagger';
@@ -181,6 +182,147 @@ describe('applyDeprecationDocs', () => {
     } finally {
       warn.mockRestore();
     }
+  });
+
+  it('skips non-routed helper methods on a class-level deprecated controller', () => {
+    const warn = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    try {
+      @Deprecated({ deprecatedAt: '2026-07-01T00:00:00Z' })
+      @Controller('orders')
+      class OrdersController {
+        @Get()
+        list() {
+          return this.format([]);
+        }
+
+        // No request-method metadata: not a route, so nothing to document
+        // and nothing to warn about.
+        format(rows: unknown[]) {
+          return rows;
+        }
+      }
+
+      const document = documentWith('/orders');
+      applyDeprecationDocs(document, stubApp([OrdersController]));
+      expect(document.paths['/orders'].get.deprecated).toBe(true);
+      expect(warn).not.toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('marks every path of a route registered under several controller and method paths', () => {
+    @Controller(['orders', 'purchases'])
+    class OrdersController {
+      @Deprecated({ deprecatedAt: '2026-07-01T00:00:00Z' })
+      @Get(['', 'all'])
+      list() {
+        return null;
+      }
+    }
+
+    const document = documentWith(
+      '/orders',
+      '/orders/all',
+      '/purchases',
+      '/purchases/all',
+      '/unrelated',
+    );
+    applyDeprecationDocs(document, stubApp([OrdersController]));
+    for (const path of ['/orders', '/orders/all', '/purchases', '/purchases/all']) {
+      expect(document.paths[path].get.deprecated, path).toBe(true);
+    }
+    expect(document.paths['/unrelated'].get.deprecated).toBeUndefined();
+  });
+
+  it('never suffix-matches the root route against another path', () => {
+    const warn = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    try {
+      @Controller()
+      class RootController {
+        @Deprecated({ deprecatedAt: '2026-07-01T00:00:00Z' })
+        @Get()
+        index() {
+          return null;
+        }
+      }
+
+      // "/v1/" is the only path ending in "/", so a suffix match on "/" would
+      // be unambiguous, and wrong.
+      const document = documentWith('/v1/');
+      applyDeprecationDocs(document, stubApp([RootController]));
+      expect(document.paths['/v1/'].get.deprecated).toBeUndefined();
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('No OpenAPI path matches "/"'));
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('leaves $ref responses alone and documents headers on the inline ones', () => {
+    @Controller('orders')
+    class OrdersController {
+      @Deprecated({ deprecatedAt: '2026-07-01T00:00:00Z' })
+      @Get()
+      list() {
+        return null;
+      }
+    }
+
+    const shared = { $ref: '#/components/responses/NotFound' };
+    const document = {
+      paths: {
+        '/orders': {
+          get: {
+            responses: {
+              '200': { description: 'OK' } as Record<string, unknown>,
+              '404': shared as Record<string, unknown>,
+            },
+          },
+        },
+      },
+    };
+    applyDeprecationDocs(document, stubApp([OrdersController]));
+    const { responses } = document.paths['/orders'].get;
+    expect(responses['200'].headers).toHaveProperty('Deprecation');
+    expect(responses['404']).toEqual({ $ref: '#/components/responses/NotFound' });
+  });
+
+  it('uses the unscoped module path when the app cannot report its application id', () => {
+    @Controller('orders')
+    class OrdersController {
+      @Deprecated({ deprecatedAt: '2026-07-01T00:00:00Z' })
+      @Get()
+      list() {
+        return null;
+      }
+    }
+    class AdminModule {}
+    Reflect.defineMetadata(MODULE_PATH, 'admin', AdminModule);
+
+    // No ModulesContainer, so there is no per-application key to look up.
+    const app = {
+      get: (token: unknown) => {
+        if (token === DiscoveryService) {
+          return {
+            getControllers: () => [
+              {
+                metatype: OrdersController,
+                name: 'OrdersController',
+                host: { metatype: AdminModule },
+              },
+            ],
+          };
+        }
+        if (token === ApplicationConfig) return { getGlobalPrefix: () => '' };
+        throw new Error(`unexpected token ${String(token)}`);
+      },
+    } as unknown as INestApplication;
+
+    // Both paths end in "/orders": only the module path makes the match exact.
+    const document = documentWith('/admin/orders', '/public/orders');
+    applyDeprecationDocs(document, app);
+    expect(document.paths['/admin/orders'].get.deprecated).toBe(true);
+    expect(document.paths['/public/orders'].get.deprecated).toBeUndefined();
   });
 
   it('ignores controllers with no metatype', () => {

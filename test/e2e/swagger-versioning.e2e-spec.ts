@@ -148,6 +148,14 @@ describe('applyDeprecationDocs with URI versioning', () => {
     expect(paths['/customers/search'].deprecated).toBe(false);
   });
 
+  it('keeps unversioned controllers on the plain path when there is no default version', async () => {
+    const paths = await documentFor([CustomersController, OrdersV1Controller], {
+      type: VersioningType.URI,
+    });
+    expect(paths['/customers'].deprecated).toBe(true);
+    expect(paths['/v1/orders'].deprecated).toBe(true);
+  });
+
   it('honours a custom version prefix', async () => {
     const paths = await documentFor([OrdersV1Controller, OrdersNeutralController], {
       type: VersioningType.URI,
