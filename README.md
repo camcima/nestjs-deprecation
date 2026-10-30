@@ -12,7 +12,7 @@
 [![npm version](https://img.shields.io/npm/v/@camcima/nestjs-deprecation)](https://www.npmjs.com/package/@camcima/nestjs-deprecation)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![TypeScript](https://img.shields.io/badge/TypeScript-6-blue.svg)](https://www.typescriptlang.org/)
-[![Node.js](https://img.shields.io/badge/Node.js-20%20%7C%2022%20%7C%2024-green.svg)](https://nodejs.org/)
+[![Node.js](https://img.shields.io/badge/Node.js-22%20%7C%2024-green.svg)](https://nodejs.org/)
 
 </div>
 
@@ -110,7 +110,7 @@ pnpm add @camcima/nestjs-deprecation
 
 NestJS 12 ships its packages as ESM only. This library stays CommonJS, so a single build supports NestJS 10, 11 and 12, and it works unchanged in both CommonJS and ESM applications. It adds no requirements beyond those of NestJS 12 itself:
 
-- **Node.js 20.19+ or 22.12+.** CommonJS code, this library included, loads NestJS 12 through `require(esm)`, which Node.js enables by default only from those releases.
+- **Node.js 22.12+.** CommonJS code, this library included, loads NestJS 12 through `require(esm)`, which Node.js 22 enables by default only from 22.12.0.
 - **AWS Lambda:** set `NODE_OPTIONS=--experimental-require-module`, because Lambda's Node.js runtimes disable `require(esm)` by default.
 
 See the [NestJS 11 → 12 migration guide](https://docs.nestjs.com/migration-guide) for details.
