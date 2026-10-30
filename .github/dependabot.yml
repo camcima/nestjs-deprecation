@@ -1,20 +1,50 @@
 version: 2
 updates:
-  - package-ecosystem: "npm"
-    directory: "/"
+  - package-ecosystem: 'npm'
+    directory: '/'
     schedule:
-      interval: "weekly"
+      interval: 'weekly'
     open-pull-requests-limit: 10
+    ignore:
+      # Held by maintainer (2026-10): remove this entry to resume updates
+      - dependency-name: '@nestjs/*'
+      # Held by maintainer (2026-10): remove this entry to resume updates
+      - dependency-name: '@types/node'
+      # Vitest 5 drops Node 20, which the test matrix and engines.node still cover.
+      - dependency-name: 'vitest'
+        update-types:
+          - 'version-update:semver-major'
+      - dependency-name: '@vitest/*'
+        update-types:
+          - 'version-update:semver-major'
+      # The OpenTelemetry SDK 3.x line requires Node >=22.15 (the test matrix runs 20).
+      - dependency-name: '@opentelemetry/sdk-*'
+        update-types:
+          - 'version-update:semver-major'
+      # Every SDK 2.x release caps its peer at @opentelemetry/api <1.10.0, so api
+      # 1.10 has to wait for the SDK 3 upgrade above. Patch updates still flow.
+      - dependency-name: '@opentelemetry/api'
+        update-types:
+          - 'version-update:semver-minor'
+      # typescript-eslint 8.x supports typescript <6.1.0 and throws on TS 7.
+      - dependency-name: 'typescript'
+        update-types:
+          - 'version-update:semver-major'
+      # Published without provenance, unlike 2.1.x-2.2.1; pnpm's
+      # trust-policy=no-downgrade rejects it as a possible package takeover.
+      - dependency-name: 'lefthook'
+        versions:
+          - '2.2.2'
     groups:
       production-dependencies:
-        dependency-type: "production"
+        dependency-type: 'production'
       dev-dependencies:
-        dependency-type: "development"
-  - package-ecosystem: "github-actions"
-    directory: "/"
+        dependency-type: 'development'
+  - package-ecosystem: 'github-actions'
+    directory: '/'
     schedule:
-      interval: "weekly"
+      interval: 'weekly'
     groups:
       github-actions:
         patterns:
-          - "*"
+          - '*'
