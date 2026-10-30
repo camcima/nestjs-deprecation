@@ -16,8 +16,9 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       # Every action-setup step here resolves pnpm from "packageManager" in
-      # package.json. That pin has to stay on pnpm 10 while engines.node allows
-      # 20: pnpm 11 requires Node >=22.13 and crashes on 20 loading node:sqlite.
+      # package.json, which is still on pnpm 10. pnpm 11 requires Node >=22.13,
+      # above both the engines.node floor (>=22) and the 22.12.0 pack-compat leg
+      # below, so moving to it means raising those first.
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
@@ -34,7 +35,7 @@ jobs:
       # out which ones are affected is the point of the matrix.
       fail-fast: false
       matrix:
-        node-version: [20, 22, 24]
+        node-version: [22, 24]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
@@ -84,11 +85,11 @@ jobs:
             node: 22
           - nest: 11
             node: 22
-          # Nest 12's documented floor: the first 20.x release that lets
+          # Nest 12's floor on the 22.x line: the first 22.x release that lets
           # CommonJS code (this library's dist included) require() Nest's
           # ESM-only packages without a flag.
           - nest: 12
-            node: '20.19.0'
+            node: '22.12.0'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
