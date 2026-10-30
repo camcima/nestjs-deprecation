@@ -13,6 +13,13 @@ updates:
       - dependency-name: '@types/node'
         update-types:
           - 'version-update:semver-major'
+      # @opentelemetry/sdk-metrics 2.x (the only OTel SDK package used here) caps
+      # its api peer at <1.10.0, while sdk-metrics 3.x requires api >=1.10.0
+      # <1.11.0. Api 1.10 has to land together with the sdk-metrics 3 major, so
+      # lift this entry when taking that update. Patch updates still flow.
+      - dependency-name: '@opentelemetry/api'
+        update-types:
+          - 'version-update:semver-minor'
       # typescript-eslint 8.x supports typescript <6.1.0 and throws on TS 7.
       - dependency-name: 'typescript'
         update-types:
